@@ -10,6 +10,8 @@ const std::vector<DemoInfo>& demoScenes() {
         {"sculpt", "Subdivided Sculpt", "Box -> PolyExtrude -> Catmull-Clark subdivision -> Mountain."},
         {"molecule", "Wire Molecule", "Torus edges turned into tubes with spheres on every point."},
         {"sparks", "Particle Sparks", "POP Solver: sparks burst from a moving emitter, bounce on the ground and leave trails. Press Play."},
+        {"smoke", "Smoke Plume", "Pyro Solver: smoke rises from a sphere and flows around a collider. Press Play."},
+        {"fire", "Campfire", "Pyro Solver with fire glow: hot gas cools quickly into dark smoke. Press Play."},
         {"vortex", "Particle Vortex", "POP Solver with curl-noise turbulence and a POP wrangle that spins particles into a column. Press Play."},
     };
     return d;
@@ -180,6 +182,49 @@ static bool buildDemoSceneImpl(Graph& g, const std::string& name) {
         g.connect(tr, m, 1);
         g.connect(em, m, 2);
         Node* out = g.createNode("null", 110, 320, "OUT");
+        g.connect(m, out, 0);
+        g.setDisplayNode(out);
+        g.frameEnd = 240;
+        return true;
+    }
+    if (name == "smoke" || name == "fire") {
+        const bool fire = name == "fire";
+        Node* src = g.createNode("sphere", 0, 0, "source");
+        setV(src, "rad", fire ? Vec3(0.45f, 0.14f, 0.45f) : Vec3(0.42f, 0.25f, 0.42f)); setV(src, "t", Vec3(0, fire ? 0.16f : 0.3f, 0));
+        Node* pyro = g.createNode("pyrosolver", 90, 90, fire ? "fire" : "smoke");
+        g.connect(src, pyro, 0);
+        Node* m = g.createNode("merge", 160, 180, "merge1");
+        g.connect(pyro, m, 0);
+        if (fire) {
+            setV(pyro, "center", Vec3(0, 2, 0)); setV(pyro, "size", Vec3(3, 4, 3)); setF(pyro, "voxelsize", 0.06f);
+            setF(pyro, "sourcedensity", 0.5f); setF(pyro, "sourcetemp", 1.6f);
+            setF(pyro, "buoyancy", 6); setF(pyro, "cooling", 2.6f); setF(pyro, "dissipation", 0.9f);
+            setF(pyro, "turb", 2.5f); setF(pyro, "turbfreq", 2.2f); setF(pyro, "turbspeed", 1.2f); setF(pyro, "vorticity", 5);
+            setV(pyro, "color", Vec3(0.16f, 0.15f, 0.15f)); setF(pyro, "rdensity", 1.3f); setF(pyro, "fire", 2.2f);
+            Node* logs = g.createNode("torus", 300, 0, "stones");
+            setF(logs, "rad1", 0.62f); setF(logs, "rad2", 0.12f); setF(logs, "rows", 14); setF(logs, "cols", 8); setV(logs, "t", Vec3(0, 0.1f, 0));
+            Node* lc = g.createNode("color", 300, 90, "stone_color");
+            setV(lc, "color", Vec3(0.3f, 0.29f, 0.28f));
+            g.connect(logs, lc, 0);
+            g.connect(lc, m, 1);
+        } else {
+            Node* col = g.createNode("sphere", 200, 0, "collider");
+            setV(col, "rad", Vec3(0.5f)); setV(col, "t", Vec3(0.12f, 2.1f, 0));
+            g.connect(col, pyro, 1);
+            Node* cc = g.createNode("color", 300, 90, "collider_color");
+            setV(cc, "color", Vec3(0.75f, 0.42f, 0.2f));
+            g.connect(col, cc, 0);
+            g.connect(cc, m, 1);
+            setF(pyro, "buoyancy", 5); setF(pyro, "dissipation", 0.06f); setF(pyro, "cooling", 0.35f); setF(pyro, "weight", 0.2f);
+            setF(pyro, "turb", 1.6f); setF(pyro, "vorticity", 5); setF(pyro, "rdensity", 1.6f); setF(pyro, "voxelsize", 0.065f);
+        }
+        Node* ground = g.createNode("grid", 440, 0, "ground");
+        setF(ground, "sizex", 4.5f); setF(ground, "sizey", 4.5f); setF(ground, "rows", 2); setF(ground, "cols", 2);
+        Node* gc = g.createNode("color", 440, 90, "floor_color");
+        setV(gc, "color", Vec3(0.2f, 0.21f, 0.23f));
+        g.connect(ground, gc, 0);
+        g.connect(gc, m, 2);
+        Node* out = g.createNode("null", 160, 260, "OUT");
         g.connect(m, out, 0);
         g.setDisplayNode(out);
         g.frameEnd = 240;

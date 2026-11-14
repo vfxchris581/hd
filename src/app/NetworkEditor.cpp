@@ -19,6 +19,7 @@ ImU32 categoryColor(const std::string& cat) {
     if (cat == "Points") return IM_COL32(72, 118, 78, 255);
     if (cat == "Utility") return IM_COL32(88, 90, 96, 255);
     if (cat == "Simulation") return IM_COL32(150, 70, 78, 255);
+    if (cat == "Volumes") return IM_COL32(120, 96, 140, 255);
     return IM_COL32(78, 92, 112, 255); // Modifiers
 }
 
@@ -332,7 +333,10 @@ void NetworkEditor::draw(App& app) {
             if (zoom_ > 0.7f) {
                 char info[96];
                 if (!n->error().empty()) std::snprintf(info, sizeof info, "error");
-                else if (n->cookStamp()) std::snprintf(info, sizeof info, "%zu pts  %.1f ms", n->geometry().numPoints(), n->cookTimeMs());
+                else if (n->cookStamp() && !n->geometry().volumes.empty() && n->geometry().numPoints() == 0) {
+                    const Volume& vol = n->geometry().volumes[0];
+                    std::snprintf(info, sizeof info, "%dx%dx%d vox  %.0f ms", vol.nx, vol.ny, vol.nz, n->cookTimeMs());
+                } else if (n->cookStamp()) std::snprintf(info, sizeof info, "%zu pts  %.1f ms", n->geometry().numPoints(), n->cookTimeMs());
                 else info[0] = 0;
                 dl->AddText(font, fs * 0.82f, ImVec2(np.x, np.y + fs * 1.05f), n->error().empty() ? IM_COL32(140, 142, 148, 255) : IM_COL32(240, 90, 90, 255), info);
             }
@@ -438,7 +442,7 @@ void NetworkEditor::drawNodeMenu(App& app) {
     if (ImGui::IsItemEdited()) menuHighlight_ = 0;
 
     std::vector<const NodeType*> matches;
-    static const char* cats[] = {"Generators", "Modifiers", "Deformers", "Attributes", "Points", "Simulation", "Utility"};
+    static const char* cats[] = {"Generators", "Modifiers", "Deformers", "Attributes", "Points", "Volumes", "Simulation", "Utility"};
     for (const char* cat : cats)
         for (auto& t : nodeTypes())
             if (t.category == cat && (icontains(t.label, search_) || icontains(t.name, search_))) matches.push_back(&t);

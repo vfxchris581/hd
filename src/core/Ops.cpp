@@ -157,6 +157,7 @@ void blendAttribs(Geometry& out, size_t dst, const Geometry& in, const int* src,
 
 Geometry catmullClark(const Geometry& in) {
     Geometry out;
+    out.volumes = in.volumes;
     // collect closed polygons only
     std::vector<int> faces;
     for (size_t i = 0; i < in.numPrims(); ++i)
@@ -274,6 +275,7 @@ Geometry catmullClark(const Geometry& in) {
 
 Geometry fusePoints(const Geometry& in, float dist) {
     Geometry out;
+    out.volumes = in.volumes;
     dist = std::max(dist, 1e-7f);
     float inv = 1.f / dist;
     struct CellHash {

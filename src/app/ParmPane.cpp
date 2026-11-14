@@ -240,6 +240,8 @@ void App::drawParameters() {
             g.bounds(mn, mx);
             ImGui::TextDisabled("Bounds  min (%.3g, %.3g, %.3g)  max (%.3g, %.3g, %.3g)", mn.x, mn.y, mn.z, mx.x, mx.y, mx.z);
         }
+        for (auto& vol : g.volumes)
+            ImGui::Text("Volume  %d x %d x %d voxels  (voxel size %.3g)", vol.nx, vol.ny, vol.nz, double(vol.dx));
         std::string pa, qa;
         for (auto& [k, a] : g.pointAttribs) pa += k + (a.tuple == 3 ? "[3] " : " ");
         for (auto& [k, a] : g.primAttribs) qa += k + (a.tuple == 3 ? "[3] " : " ");

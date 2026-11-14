@@ -39,7 +39,7 @@ struct ViewOptions {
 };
 
 struct RenderStats {
-    size_t triangles = 0, lines = 0, points = 0;
+    size_t triangles = 0, lines = 0, points = 0, volumes = 0;
 };
 
 class Renderer {
@@ -72,6 +72,15 @@ private:
     void upload(Batch& b, const std::vector<float>& data, int floatsPerVertex, const int* layout, int nAttribs);
     void ensureTargets(int w, int h);
     void drawBatch(const Batch& b, unsigned mode);
+    void drawVolumes(int w, int h, const Camera& cam);
+    struct GpuVolume {
+        unsigned tex = 0;
+        Vec3 mn, mx, color;
+        float density = 1, fire = 0, step = 0.05f;
+    };
+    std::vector<GpuVolume> volumes_;
+    Batch cube_;
+    unsigned progVol_ = 0, depthTex_ = 0, volFbo_ = 0;
 
     bool inited_ = false;
     unsigned progMesh_ = 0, progLine_ = 0, progPoint_ = 0, progBg_ = 0;

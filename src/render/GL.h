@@ -76,6 +76,16 @@ typedef std::ptrdiff_t GLintptr;
 #define GL_MAX_SAMPLES 0x8D57
 #define GL_FRAMEBUFFER_BINDING 0x8CA6
 #define GL_VIEWPORT 0x0BA2
+#define GL_TEXTURE_3D 0x806F
+#define GL_TEXTURE_WRAP_R 0x8072
+#define GL_RGB16F 0x881B
+#define GL_RGB 0x1907
+#define GL_ONE 1
+#define GL_FRONT 0x0404
+#define GL_BACK 0x0405
+#define GL_DEPTH_STENCIL 0x84F9
+#define GL_UNSIGNED_INT_24_8 0x84FA
+#define GL_UNPACK_ALIGNMENT 0x0CF5
 
 #define HD_GL_FUNCTIONS(X) \
     X(const GLubyte*, glGetString, (GLenum name)) \
@@ -141,7 +151,10 @@ typedef std::ptrdiff_t GLintptr;
     X(void, glBindTexture, (GLenum target, GLuint t)) \
     X(void, glTexImage2D, (GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLint border, GLenum fmt, GLenum type, const void* data)) \
     X(void, glTexParameteri, (GLenum target, GLenum pname, GLint param)) \
-    X(void, glActiveTexture, (GLenum unit))
+    X(void, glActiveTexture, (GLenum unit)) \
+    X(void, glTexImage3D, (GLenum target, GLint level, GLint ifmt, GLsizei w, GLsizei h, GLsizei d, GLint border, GLenum fmt, GLenum type, const void* data)) \
+    X(void, glCullFace, (GLenum mode)) \
+    X(void, glUniform2f, (GLint l, GLfloat x, GLfloat y))
 
 #define HD_GL_DECLARE(ret, name, args) typedef ret(HD_APIENTRY* PFN_hd_##name) args; extern PFN_hd_##name hd_##name;
 HD_GL_FUNCTIONS(HD_GL_DECLARE)
@@ -212,6 +225,9 @@ HD_GL_FUNCTIONS(HD_GL_DECLARE)
 #define glTexImage2D hd_glTexImage2D
 #define glTexParameteri hd_glTexParameteri
 #define glActiveTexture hd_glActiveTexture
+#define glTexImage3D hd_glTexImage3D
+#define glCullFace hd_glCullFace
+#define glUniform2f hd_glUniform2f
 
 namespace hd {
 using GLGetProc = void* (*)(const char*);

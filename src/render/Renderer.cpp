@@ -144,6 +144,62 @@ void main() {
     frag = vec4(mix(bot, top, smoothstep(0.0, 1.0, vY)), 1.0);
 })";
 
+const char* kVolVS = R"(#version 330 core
+layout(location=0) in vec3 aPos;
+uniform mat4 uView, uProj;
+uniform vec3 uBoxMin, uBoxMax;
+out vec3 vWorld;
+void main() {
+    vWorld = mix(uBoxMin, uBoxMax, aPos);
+    gl_Position = uProj * (uView * vec4(vWorld, 1.0));
+})";
+
+// Raymarches a 3D texture: r = density, g = heat, b = precomputed light transmittance.
+const char* kVolFS = R"(#version 330 core
+in vec3 vWorld;
+uniform sampler3D uVol;
+uniform sampler2D uDepth;
+uniform vec3 uEye, uFwd, uBoxMin, uBoxMax, uColor;
+uniform vec2 uViewport;
+uniform float uProjA, uProjB, uDensity, uFire, uStep;
+out vec4 frag;
+void main() {
+    vec3 rd = normalize(vWorld - uEye);
+    vec3 inv = 1.0 / rd;
+    vec3 t0 = (uBoxMin - uEye) * inv, t1 = (uBoxMax - uEye) * inv;
+    vec3 tn = min(t0, t1), tf = max(t0, t1);
+    float tmin = max(max(tn.x, max(tn.y, tn.z)), 0.0);
+    float tmax = min(tf.x, min(tf.y, tf.z));
+    float depth = texture(uDepth, gl_FragCoord.xy / uViewport).r;
+    if (depth < 1.0) {
+        float zv = -uProjB / (depth * 2.0 - 1.0 + uProjA);   // view-space z (negative)
+        tmax = min(tmax, -zv / max(dot(rd, uFwd), 1e-4));
+    }
+    if (tmax <= tmin) discard;
+    float jitter = fract(sin(dot(gl_FragCoord.xy, vec2(12.9898, 78.233))) * 43758.5453);
+    float t = tmin + uStep * jitter;
+    vec3 col = vec3(0.0);
+    float T = 1.0;
+    vec3 size = uBoxMax - uBoxMin;
+    for (int i = 0; i < 220; ++i) {
+        if (t >= tmax || T < 0.01) break;
+        vec3 s = texture(uVol, (uEye + rd * t - uBoxMin) / size).rgb;
+        if (s.r > 0.002) {
+            float a = 1.0 - exp(-s.r * uDensity * uStep * 6.0);
+            vec3 lit = uColor * (0.22 + 0.95 * s.b) + vec3(0.03, 0.04, 0.06);
+            col += T * a * lit;
+            T *= 1.0 - a;
+        }
+        if (uFire > 0.0 && s.g > 0.02) {
+            float h = s.g;
+            vec3 glow = vec3(h * 3.2, h * h * 1.7, h * h * h * 0.7);
+            col += T * glow * (uFire * uStep * 5.0);
+        }
+        t += uStep;
+    }
+    frag = vec4(col, 1.0 - T);
+})";
+
 unsigned compileShader(unsigned type, const char* src, std::string& err) {
     unsigned s = glCreateShader(type);
     glShaderSource(s, 1, &src, nullptr);
@@ -199,7 +255,21 @@ bool Renderer::init(std::string& error) {
     progLine_ = progMesh_ ? linkProgram(kLineVS, kLineFS, error) : 0;
     progPoint_ = progLine_ ? linkProgram(kPointVS, kPointFS, error) : 0;
     progBg_ = progPoint_ ? linkProgram(kBgVS, kBgFS, error) : 0;
-    if (!progBg_) return false;
+    progVol_ = progBg_ ? linkProgram(kVolVS, kVolFS, error) : 0;
+    if (!progVol_) return false;
+    {
+        // unit cube, outward-facing triangles
+        static const float q[6][4][3] = {
+            {{0, 0, 0}, {0, 0, 1}, {0, 1, 1}, {0, 1, 0}}, {{1, 0, 0}, {1, 1, 0}, {1, 1, 1}, {1, 0, 1}},
+            {{0, 0, 0}, {1, 0, 0}, {1, 0, 1}, {0, 0, 1}}, {{0, 1, 0}, {0, 1, 1}, {1, 1, 1}, {1, 1, 0}},
+            {{0, 0, 0}, {0, 1, 0}, {1, 1, 0}, {1, 0, 0}}, {{0, 0, 1}, {1, 0, 1}, {1, 1, 1}, {0, 1, 1}}};
+        std::vector<float> cube;
+        for (auto& f : q)
+            for (int idx : {0, 1, 2, 0, 2, 3})
+                for (int k = 0; k < 3; ++k) cube.push_back(f[idx][k]);
+        const int layout[1] = {3};
+        upload(cube_, cube, 3, layout, 1);
+    }
     glGenVertexArrays(1, &bgVao_);
     GLint maxSamples = 0;
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
@@ -225,12 +295,17 @@ bool Renderer::init(std::string& error) {
 
 void Renderer::shutdown() {
     if (!inited_) return;
-    for (Batch* b : {&tris_, &wire_, &curves_, &points_, &loose_, &normals_, &grid_}) {
+    for (auto& v : volumes_) if (v.tex) glDeleteTextures(1, &v.tex);
+    volumes_.clear();
+    if (depthTex_) glDeleteTextures(1, &depthTex_);
+    if (volFbo_) glDeleteFramebuffers(1, &volFbo_);
+    depthTex_ = volFbo_ = 0;
+    for (Batch* b : {&tris_, &wire_, &curves_, &points_, &loose_, &normals_, &grid_, &cube_}) {
         if (b->vbo) glDeleteBuffers(1, &b->vbo);
         if (b->vao) glDeleteVertexArrays(1, &b->vao);
         *b = Batch();
     }
-    for (unsigned p : {progMesh_, progLine_, progPoint_, progBg_}) if (p) glDeleteProgram(p);
+    for (unsigned p : {progMesh_, progLine_, progPoint_, progBg_, progVol_}) if (p) glDeleteProgram(p);
     if (bgVao_) glDeleteVertexArrays(1, &bgVao_);
     if (msFbo_) glDeleteFramebuffers(1, &msFbo_);
     if (resolveFbo_) glDeleteFramebuffers(1, &resolveFbo_);
@@ -349,6 +424,53 @@ void Renderer::setGeometry(const Geometry& g, uint64_t stamp) {
     upload(points_, pts, 7, pointLayout, 3);
     upload(loose_, loose, 7, pointLayout, 3);
     upload(normals_, nrm, 6, lineLayout, 2);
+    // ---- volumes -> 3D textures (density, heat, light)
+    for (auto& v : volumes_) if (v.tex) glDeleteTextures(1, &v.tex);
+    volumes_.clear();
+    for (const Volume& vol : g.volumes) {
+        if (volumes_.size() >= 8 || !vol.density || vol.density->size() != vol.voxels() || vol.voxels() == 0) continue;
+        const int nx = vol.nx, ny = vol.ny, nz = vol.nz;
+        const std::vector<float>& d = *vol.density;
+        const std::vector<float>* heat = vol.heat && vol.heat->size() == d.size() ? vol.heat.get() : nullptr;
+        std::vector<float> tex(d.size() * 3);
+        // light transmittance toward a fixed key light, marched on the CPU
+        const Vec3 L = normalize(Vec3(0.4f, 0.8f, 0.45f)) * 1.5f;
+        const float k = 1.5f * vol.dx * 6.f * vol.densityScale * 0.7f;
+        for (int z = 0; z < nz; ++z)
+            for (int y = 0; y < ny; ++y)
+                for (int x = 0; x < nx; ++x) {
+                    size_t i = size_t(x) + size_t(nx) * (size_t(y) + size_t(ny) * size_t(z));
+                    float light = 1.f;
+                    if (d[i] > 0.002f) {
+                        float sum = 0;
+                        for (int s = 1; s <= 10; ++s) {
+                            int sx = int(float(x) + L.x * float(s) + 0.5f), sy = int(float(y) + L.y * float(s) + 0.5f), sz = int(float(z) + L.z * float(s) + 0.5f);
+                            if (sx < 0 || sy < 0 || sz < 0 || sx >= nx || sy >= ny || sz >= nz) break;
+                            sum += d[size_t(sx) + size_t(nx) * (size_t(sy) + size_t(ny) * size_t(sz))];
+                        }
+                        light = std::exp(-sum * k);
+                    }
+                    tex[i * 3] = d[i];
+                    tex[i * 3 + 1] = heat ? (*heat)[i] : 0.f;
+                    tex[i * 3 + 2] = light;
+                }
+        GpuVolume gv;
+        gv.mn = vol.bmin(); gv.mx = vol.bmax(); gv.color = vol.color;
+        gv.density = vol.densityScale; gv.fire = vol.fire;
+        gv.step = std::max(vol.dx * 0.7f, length(gv.mx - gv.mn) / 200.f);
+        glGenTextures(1, &gv.tex);
+        glBindTexture(GL_TEXTURE_3D, gv.tex);
+        glPixelStorei(GL_UNPACK_ALIGNMENT, 4);
+        glTexImage3D(GL_TEXTURE_3D, 0, GL_RGB16F, nx, ny, nz, 0, GL_RGB, GL_FLOAT, tex.data());
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_3D, GL_TEXTURE_WRAP_R, GL_CLAMP_TO_EDGE);
+        glBindTexture(GL_TEXTURE_3D, 0);
+        volumes_.push_back(gv);
+    }
+    stats_.volumes = volumes_.size();
     stats_.triangles = size_t(tris_.count / 3);
     stats_.lines = size_t(wire_.count / 2 + curves_.count / 2);
     stats_.points = size_t(points_.count);
@@ -362,6 +484,8 @@ void Renderer::ensureTargets(int w, int h) {
         glGenRenderbuffers(1, &msColor_);
         glGenRenderbuffers(1, &msDepth_);
         glGenTextures(1, &resolveTex_);
+        glGenTextures(1, &depthTex_);
+        glGenFramebuffers(1, &volFbo_);
     }
     fbW_ = w; fbH_ = h;
     glBindRenderbuffer(GL_RENDERBUFFER, msColor_);
@@ -378,7 +502,19 @@ void Renderer::ensureTargets(int w, int h) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    // resolved scene depth, sampled by the volume pass
+    glBindTexture(GL_TEXTURE_2D, depthTex_);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, w, h, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, nullptr);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    glBindTexture(GL_TEXTURE_2D, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, resolveFbo_);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolveTex_, 0);
+    glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, depthTex_, 0);
+    // colour-only target sharing the resolved image, so the depth texture can be read while drawing
+    glBindFramebuffer(GL_FRAMEBUFFER, volFbo_);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, resolveTex_, 0);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
@@ -491,11 +627,64 @@ unsigned Renderer::render(int w, int h, const Camera& cam, const ViewOptions& op
     // resolve MSAA
     glBindFramebuffer(GL_READ_FRAMEBUFFER, msFbo_);
     glBindFramebuffer(GL_DRAW_FRAMEBUFFER, resolveFbo_);
-    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT, GL_NEAREST);
+    glBlitFramebuffer(0, 0, w, h, 0, 0, w, h, GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT, GL_NEAREST);
+    if (!volumes_.empty()) drawVolumes(w, h, cam);
     glBindFramebuffer(GL_FRAMEBUFFER, GLuint(prevFbo));
     glViewport(prevViewport[0], prevViewport[1], prevViewport[2], prevViewport[3]);
     glDisable(GL_DEPTH_TEST);
     return resolveTex_;
+}
+
+void Renderer::drawVolumes(int w, int h, const Camera& cam) {
+    glBindFramebuffer(GL_FRAMEBUFFER, volFbo_);
+    glViewport(0, 0, w, h);
+    glDisable(GL_DEPTH_TEST);
+    glDepthMask(GL_FALSE);
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_ONE, GL_ONE_MINUS_SRC_ALPHA); // premultiplied
+    glEnable(GL_CULL_FACE);
+    glCullFace(GL_FRONT); // draw back faces so it also works with the camera inside the volume
+    Mat4 V = cam.view(), P = cam.proj(float(w) / float(h));
+    Vec3 eye = cam.eye(), fwd = normalize(cam.target - eye);
+    glUseProgram(progVol_);
+    setMat(progVol_, "uView", V);
+    setMat(progVol_, "uProj", P);
+    glUniform3f(glGetUniformLocation(progVol_, "uEye"), eye.x, eye.y, eye.z);
+    glUniform3f(glGetUniformLocation(progVol_, "uFwd"), fwd.x, fwd.y, fwd.z);
+    glUniform1f(glGetUniformLocation(progVol_, "uProjA"), P.at(2, 2));
+    glUniform1f(glGetUniformLocation(progVol_, "uProjB"), P.at(2, 3));
+    glUniform1i(glGetUniformLocation(progVol_, "uVol"), 0);
+    glUniform1i(glGetUniformLocation(progVol_, "uDepth"), 1);
+    glUniform2f(glGetUniformLocation(progVol_, "uViewport"), float(w), float(h));
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D, depthTex_);
+    glActiveTexture(GL_TEXTURE0);
+    // far-to-near so overlapping volumes blend in order
+    std::vector<const GpuVolume*> order;
+    for (auto& v : volumes_) order.push_back(&v);
+    std::sort(order.begin(), order.end(), [&](const GpuVolume* a, const GpuVolume* b) {
+        return length((a->mn + a->mx) * 0.5f - eye) > length((b->mn + b->mx) * 0.5f - eye);
+    });
+    for (const GpuVolume* v : order) {
+        glBindTexture(GL_TEXTURE_3D, v->tex);
+        glUniform3f(glGetUniformLocation(progVol_, "uBoxMin"), v->mn.x, v->mn.y, v->mn.z);
+        glUniform3f(glGetUniformLocation(progVol_, "uBoxMax"), v->mx.x, v->mx.y, v->mx.z);
+        glUniform3f(glGetUniformLocation(progVol_, "uColor"), v->color.x, v->color.y, v->color.z);
+        glUniform1f(glGetUniformLocation(progVol_, "uDensity"), v->density);
+        glUniform1f(glGetUniformLocation(progVol_, "uFire"), v->fire);
+        glUniform1f(glGetUniformLocation(progVol_, "uStep"), v->step);
+        drawBatch(cube_, GL_TRIANGLES);
+    }
+    glBindTexture(GL_TEXTURE_3D, 0);
+    glActiveTexture(GL_TEXTURE0 + 1);
+    glBindTexture(GL_TEXTURE_2D, 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindVertexArray(0);
+    glUseProgram(0);
+    glCullFace(GL_BACK);
+    glDisable(GL_CULL_FACE);
+    glDisable(GL_BLEND);
+    glDepthMask(GL_TRUE);
 }
 
 void Renderer::readPixels(std::vector<uint8_t>& rgba, int& w, int& h) {

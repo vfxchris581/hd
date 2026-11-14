@@ -4,6 +4,7 @@
 #include "core/GeoIO.h"
 #include "core/Node.h"
 #include "core/Ops.h"
+#include "core/Volume.h"
 #include <cstdio>
 #include <cmath>
 #include <functional>
@@ -447,6 +448,97 @@ TEST(particle_solver) {
     CHECK(mn.x < 1.1f && mx.x > 29.9f);
 }
 
+TEST(volumes_and_pyro) {
+    // voxelizer: a unit box fills ~1 unit^3
+    Graph g;
+    Node* box = g.createNode("box");
+    g.cook(box);
+    std::vector<unsigned char> mask;
+    const float dx = 0.05f;
+    size_t n = voxelizeGeometry(box->geometry(), 30, 30, 30, Vec3(-0.75f), dx, 0.1f, mask);
+    CHECK(std::fabs(double(n) * dx * dx * dx - 1.0) < 0.05);
+    // fog volume from a sphere: volume ~ 4/3 pi
+    Node* sph = g.createNode("sphere");
+    sph->parm("rows")->val[0] = 40; sph->parm("cols")->val[0] = 80;
+    Node* fog = g.createNode("fogvolume");
+    g.connect(sph, fog, 0);
+    g.cook(fog);
+    CHECK(fog->error().empty() && fog->geometry().volumes.size() == 1);
+    if (fog->geometry().volumes.size() == 1) {
+        const Volume& v = fog->geometry().volumes[0];
+        double sum = 0;
+        for (float d : *v.density) sum += d;
+        CHECK(std::fabs(sum * v.dx * v.dx * v.dx - 4.18879) < 0.15);
+        Vec3 mn, mx; fog->geometry().bounds(mn, mx);
+        CHECK(mn.x < -1 && mx.x > 1);
+        // transform moves and scales the volume
+        Node* xf = g.createNode("xform");
+        g.connect(fog, xf, 0);
+        xf->parm("t")->val[0] = 5; xf->parm("scale")->val[0] = 2;
+        g.cook(xf);
+        xf->geometry().bounds(mn, mx);
+        CHECK(mn.x > 2.5f && mx.x > 7 && std::fabs(xf->geometry().volumes[0].dx - v.dx * 2) < 1e-5f);
+    }
+    // smoke: rises, stays finite and bounded, avoids the collider, caches frames
+    Node* src = g.createNode("sphere");
+    for (int c = 0; c < 3; ++c) src->parm("rad")->val[c] = 0.3f;
+    src->parm("t")->val[1] = 0.4f;
+    Node* col = g.createNode("box");
+    col->parm("t")->val[1] = 1.6f;
+    for (int c = 0; c < 3; ++c) col->parm("size")->val[c] = 0.6f;
+    Node* pyro = g.createNode("pyrosolver");
+    pyro->parm("voxelsize")->val[0] = 0.12f;
+    g.connect(src, pyro, 0);
+    g.connect(col, pyro, 1);
+    auto stats = [&](double& sum, double& comY, bool& ok, double& inSolid) {
+        const Volume& v = pyro->geometry().volumes[0];
+        sum = comY = inSolid = 0; ok = true;
+        for (int k = 0; k < v.nz; ++k)
+            for (int j = 0; j < v.ny; ++j)
+                for (int i = 0; i < v.nx; ++i) {
+                    float d = (*v.density)[size_t(i) + size_t(v.nx) * (size_t(j) + size_t(v.ny) * size_t(k))];
+                    if (!(d >= 0.f && d <= 1.001f)) ok = false;
+                    Vec3 p = v.origin + Vec3(i + 0.5f, j + 0.5f, k + 0.5f) * v.dx;
+                    sum += d; comY += double(d) * p.y;
+                    if (std::fabs(p.x) < 0.2f && std::fabs(p.z) < 0.2f && std::fabs(p.y - 1.6f) < 0.2f) inSolid += d;
+                }
+        comY /= std::max(sum, 1e-9);
+    };
+    double s1, y1, s2, y2, solid; bool ok;
+    g.frame = 4; g.cook(pyro);
+    CHECK(pyro->error().empty() && pyro->geometry().volumes.size() == 1);
+    if (pyro->geometry().volumes.size() != 1) return;
+    stats(s1, y1, ok, solid);
+    CHECK(ok && s1 > 0);
+    auto ptr4 = pyro->geometry().volumes[0].density;
+    g.frame = 48; g.cook(pyro);
+    stats(s2, y2, ok, solid);
+    CHECK(ok);
+    CHECK(s2 > s1 && y2 > y1 + 0.3);
+    CHECK(solid == 0);
+    CHECK(pyro->simCacheStart == 1 && pyro->simCacheEnd == 48);
+    g.frame = 4; g.cook(pyro);
+    CHECK(pyro->geometry().volumes[0].density == ptr4); // served from cache
+    CHECK(pyro->geometry().volumes[0].heat != nullptr);
+    // before the start frame: nothing; bad domain: error
+    pyro->parm("startframe")->val[0] = 10; pyro->touch(); g.cook(pyro);
+    CHECK(pyro->geometry().volumes.empty() && pyro->error().empty());
+    pyro->parm("startframe")->val[0] = 1; pyro->parm("voxelsize")->val[0] = 0.001f; pyro->touch(); g.cook(pyro);
+    CHECK(!pyro->error().empty());
+    // merge keeps volumes alongside polygons
+    pyro->parm("voxelsize")->val[0] = 0.2f; pyro->touch();
+    Node* m = g.createNode("merge");
+    g.connect(pyro, m, 0); g.connect(col, m, 1);
+    g.cook(m);
+    CHECK(m->geometry().volumes.size() == 1 && m->geometry().numPrims() == 6);
+    // parallelFor covers every index exactly once
+    std::vector<int> hits(1000, 0);
+    parallelFor(1000, [&](int a, int b) { for (int i = a; i < b; ++i) hits[size_t(i)]++; });
+    bool once = true;
+    for (int h : hits) once &= h == 1;
+    CHECK(once);
+}
+
 TEST(demo_scenes_cook_cleanly) {
     for (auto& d : demoScenes()) {
         Graph g;
@@ -459,7 +551,7 @@ TEST(demo_scenes_cook_cleanly) {
                 CHECK(n->error().empty());
             }
         }
-        CHECK(g.displayNode() && g.displayNode()->geometry().numPoints() > 0);
+        CHECK(g.displayNode() && !g.displayNode()->geometry().empty());
         // round-trip through the file format
         Graph g2;
         CHECK(g2.fromJson(Json::parse(g.toJson().dump())));

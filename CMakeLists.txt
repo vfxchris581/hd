@@ -24,9 +24,13 @@ add_library(hd_core STATIC
   src/core/Nodes.cpp
   src/core/Noise.cpp
   src/core/Ops.cpp
+  src/core/Pyro.cpp
   src/core/Sim.cpp
+  src/core/Volume.cpp
 )
 target_include_directories(hd_core PUBLIC src)
+find_package(Threads REQUIRED)
+target_link_libraries(hd_core PUBLIC Threads::Threads)
 if(MSVC)
   target_compile_options(hd_core PRIVATE /W3 /utf-8)
   target_compile_definitions(hd_core PUBLIC _USE_MATH_DEFINES NOMINMAX _CRT_SECURE_NO_WARNINGS)

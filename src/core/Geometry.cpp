@@ -6,6 +6,7 @@ namespace hd {
 void Geometry::clear() {
     P.clear(); vertices.clear(); prims.clear();
     pointAttribs.clear(); primAttribs.clear();
+    volumes.clear();
 }
 
 int Geometry::addPoint(const Vec3& p) {
@@ -87,10 +88,19 @@ void Geometry::merge(const Geometry& o) {
         pr.start += vOffset;
         prims.push_back(pr);
     }
+    volumes.insert(volumes.end(), o.volumes.begin(), o.volumes.end());
 }
 
 void Geometry::transform(const Mat4& m) {
     for (auto& p : P) p = m.transformPoint(p);
+    // Volumes stay axis aligned: they follow translation and (average) scale, not rotation.
+    for (auto& vol : volumes) {
+        float s = (length(m.transformDir(Vec3(1, 0, 0))) + length(m.transformDir(Vec3(0, 1, 0))) + length(m.transformDir(Vec3(0, 0, 1)))) / 3.f;
+        Vec3 half = (vol.bmax() - vol.bmin()) * 0.5f;
+        Vec3 c = m.transformPoint(vol.origin + half);
+        vol.dx *= s;
+        vol.origin = c - half * s;
+    }
     for (const char* n : {"N", "v", "up"}) {
         Attrib* a = findAttrib(AttribClass::Point, n);
         if (!a || a->tuple != 3) continue;
@@ -106,10 +116,11 @@ void Geometry::transform(const Mat4& m) {
 }
 
 void Geometry::bounds(Vec3& mn, Vec3& mx) const {
-    if (P.empty()) { mn = mx = Vec3(0); return; }
+    if (P.empty() && volumes.empty()) { mn = mx = Vec3(0); return; }
     mn = Vec3(std::numeric_limits<float>::max());
     mx = Vec3(-std::numeric_limits<float>::max());
     for (auto& p : P) { mn = vmin(mn, p); mx = vmax(mx, p); }
+    for (auto& v : volumes) { mn = vmin(mn, v.bmin()); mx = vmax(mx, v.bmax()); }
 }
 
 Vec3 Geometry::primNormal(int prim) const {
@@ -171,6 +182,7 @@ void Geometry::computePointNormals() {
 
 Geometry Geometry::extractPrims(const std::vector<int>& keepPrims) const {
     Geometry g;
+    g.volumes = volumes;
     std::vector<int> remap(P.size(), -1);
     for (auto& [n, a] : pointAttribs) { Attrib na; na.tuple = a.tuple; std::copy(a.defaults, a.defaults + 3, na.defaults); g.pointAttribs[n] = na; }
     for (auto& [n, a] : primAttribs) { Attrib na; na.tuple = a.tuple; std::copy(a.defaults, a.defaults + 3, na.defaults); g.primAttribs[n] = na; }
@@ -198,6 +210,7 @@ Geometry Geometry::extractPrims(const std::vector<int>& keepPrims) const {
 
 Geometry Geometry::extractPoints(const std::vector<char>& keep) const {
     Geometry g;
+    g.volumes = volumes;
     std::vector<int> remap(P.size(), -1);
     for (auto& [n, a] : pointAttribs) { Attrib na; na.tuple = a.tuple; std::copy(a.defaults, a.defaults + 3, na.defaults); g.pointAttribs[n] = na; }
     for (auto& [n, a] : primAttribs) { Attrib na; na.tuple = a.tuple; std::copy(a.defaults, a.defaults + 3, na.defaults); g.primAttribs[n] = na; }

@@ -236,7 +236,7 @@ void App::status(const std::string& msg, bool error) {
 
 void App::frameGeometry() {
     Node* d = graph.displayNode();
-    if (!d || d->geometry().numPoints() == 0) { camera.home(); return; }
+    if (!d || d->geometry().empty()) { camera.home(); return; }
     Vec3 mn, mx;
     d->geometry().bounds(mn, mx);
     float yaw = camera.yaw, pitch = camera.pitch;

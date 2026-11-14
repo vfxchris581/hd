@@ -1,6 +1,7 @@
 #pragma once
 #include "Math.h"
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
@@ -45,6 +46,22 @@ struct Prim {
     bool closed = true; // closed polygon vs open polyline
 };
 
+// Dense voxel grid (fog / smoke / fire). Voxel data is shared, so copies are cheap.
+// Layout: index = i + nx * (j + ny * k).
+struct Volume {
+    int nx = 0, ny = 0, nz = 0;
+    Vec3 origin{0, 0, 0}; // world position of the grid's minimum corner
+    float dx = 0.1f;      // voxel size
+    std::shared_ptr<const std::vector<float>> density;
+    std::shared_ptr<const std::vector<float>> heat; // optional (fire emission)
+    Vec3 color{0.75f, 0.75f, 0.78f};
+    float densityScale = 1.f; // render opacity multiplier
+    float fire = 0.f;         // emission intensity from heat
+    size_t voxels() const { return size_t(nx) * size_t(ny) * size_t(nz); }
+    Vec3 bmin() const { return origin; }
+    Vec3 bmax() const { return origin + Vec3(float(nx), float(ny), float(nz)) * dx; }
+};
+
 // Polygon soup geometry with named point & primitive attributes. "P" is stored separately.
 class Geometry {
 public:
@@ -53,8 +70,10 @@ public:
     std::vector<Prim> prims;
     std::map<std::string, Attrib> pointAttribs;
     std::map<std::string, Attrib> primAttribs;
+    std::vector<Volume> volumes;
 
     void clear();
+    bool empty() const { return P.empty() && volumes.empty(); }
     size_t numPoints() const { return P.size(); }
     size_t numPrims() const { return prims.size(); }
     size_t numVertices() const { return vertices.size(); }

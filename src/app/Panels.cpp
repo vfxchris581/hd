@@ -88,7 +88,10 @@ void App::drawViewport() {
         char buf[256];
         std::snprintf(buf, sizeof buf, "%s  (%s)", d->name().c_str(), d->type().label.c_str());
         dl->AddText(tp, IM_COL32(200, 215, 255, 255), buf);
-        std::snprintf(buf, sizeof buf, "%zu points  %zu primitives  %zu tris", g.numPoints(), g.numPrims(), renderer.stats().triangles);
+        if (!g.volumes.empty() && g.numPoints() == 0)
+            std::snprintf(buf, sizeof buf, "volume  %d x %d x %d voxels", g.volumes[0].nx, g.volumes[0].ny, g.volumes[0].nz);
+        else
+            std::snprintf(buf, sizeof buf, "%zu points  %zu primitives  %zu tris%s", g.numPoints(), g.numPrims(), renderer.stats().triangles, g.volumes.empty() ? "" : "  + volume");
         dl->AddText(ImVec2(tp.x, tp.y + ImGui::GetTextLineHeight()), IM_COL32(190, 190, 195, 220), buf);
         if (!d->error().empty()) {
             std::snprintf(buf, sizeof buf, "Error in %s: %s", d->name().c_str(), d->error().c_str());

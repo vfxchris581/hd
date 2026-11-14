@@ -8,7 +8,8 @@
 #include <unordered_map>
 
 namespace hd {
-void registerSimNodes(std::vector<NodeType>& types); // Sim.cpp
+void registerSimNodes(std::vector<NodeType>& types);    // Sim.cpp
+void registerVolumeNodes(std::vector<NodeType>& types); // Pyro.cpp
 namespace {
 
 // ---- parameter builders
@@ -47,6 +48,7 @@ Mat4 planeOrient(int orient) {
 }
 
 void copyAttribLayout(const Geometry& in, Geometry& out) {
+    out.volumes = in.volumes;
     for (auto& [n, a] : in.pointAttribs) { Attrib na; na.tuple = a.tuple; std::copy(a.defaults, a.defaults + 3, na.defaults); out.pointAttribs[n] = na; }
     for (auto& [n, a] : in.primAttribs) { Attrib na; na.tuple = a.tuple; std::copy(a.defaults, a.defaults + 3, na.defaults); out.primAttribs[n] = na; }
 }
@@ -859,6 +861,7 @@ std::vector<NodeType> buildTypes() {
         add(t);
     }
     registerSimNodes(types);
+    registerVolumeNodes(types);
     return types;
 }
 
