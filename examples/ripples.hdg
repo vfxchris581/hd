@@ -1,0 +1,47 @@
+{
+  "display": "OUT",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "grid1",
+      "parms": {
+        "cols": 120,
+        "rows": 120
+      },
+      "type": "grid",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["grid1"],
+      "name": "ripples",
+      "parms": {
+        "snippet": "// Concentric ripples from two moving sources\nvector c1 = set(sin(@Time) * 2, 0, cos(@Time * 0.7) * 2);\nvector c2 = set(-2, 0, 1.5);\nfloat d1 = distance(@P, c1);\nfloat d2 = distance(@P, c2);\nfloat h = sin(d1 * 5 - @Time * 6) * exp(-d1 * 0.35)\n        + sin(d2 * 4 - @Time * 5) * exp(-d2 * 0.4);\n@P.y = h * 0.35;\n@Cd = hsvtorgb(set(fit(h, -1, 1, 0.62, 0.48), 0.75, fit(h, -1, 1, 0.45, 1)));\n"
+      },
+      "type": "attribwrangle",
+      "x": 0,
+      "y": 92
+    },
+    {
+      "inputs": ["ripples"],
+      "name": "normal1",
+      "parms": {},
+      "type": "normal",
+      "x": 0,
+      "y": 184
+    },
+    {
+      "inputs": ["normal1"],
+      "name": "OUT",
+      "parms": {},
+      "type": "null",
+      "x": 0,
+      "y": 264.5
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}

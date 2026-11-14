@@ -1,0 +1,118 @@
+{
+  "display": "OUT",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "ground",
+      "parms": {
+        "cols": 90,
+        "rows": 90,
+        "sizex": 12,
+        "sizey": 12
+      },
+      "type": "grid",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["ground"],
+      "name": "mountain1",
+      "parms": {
+        "elementsize": 3.5,
+        "height": 1.39999998,
+        "octaves": 6
+      },
+      "type": "mountain",
+      "x": 0,
+      "y": 80.5
+    },
+    {
+      "inputs": ["mountain1"],
+      "name": "height_ramp",
+      "parms": {
+        "color": [0.920000017, 0.899999976, 0.860000014],
+        "color2": [0.180000007, 0.319999993, 0.140000001],
+        "mode": 2
+      },
+      "type": "color",
+      "x": 0,
+      "y": 161
+    },
+    {
+      "inputs": ["height_ramp"],
+      "name": "scatter1",
+      "parms": {
+        "npts": 160,
+        "pscale": 0.180000007,
+        "pscalevar": 0.699999988,
+        "seed": 3
+      },
+      "type": "scatter",
+      "x": 308,
+      "y": 241.5
+    },
+    {
+      "inputs": [],
+      "name": "rock",
+      "parms": {
+        "cols": 12,
+        "rows": 8
+      },
+      "type": "sphere",
+      "x": 588,
+      "y": 0
+    },
+    {
+      "inputs": ["rock"],
+      "name": "rock_noise",
+      "parms": {
+        "elementsize": 0.600000024,
+        "height": 0.349999994
+      },
+      "type": "mountain",
+      "x": 588,
+      "y": 80.5
+    },
+    {
+      "inputs": ["rock_noise"],
+      "name": "rock_color",
+      "parms": {
+        "color": [0.449999988, 0.419999987, 0.400000006]
+      },
+      "type": "color",
+      "x": 588,
+      "y": 161
+    },
+    {
+      "inputs": ["rock_color", "scatter1"],
+      "name": "copy_rocks",
+      "parms": {
+        "useCd": 0
+      },
+      "type": "copytopoints",
+      "x": 462,
+      "y": 333.5
+    },
+    {
+      "inputs": ["height_ramp", "copy_rocks", null, null, null, null, null, null],
+      "name": "merge1",
+      "parms": {},
+      "type": "merge",
+      "x": 168,
+      "y": 425.5
+    },
+    {
+      "inputs": ["merge1"],
+      "name": "OUT",
+      "parms": {},
+      "type": "null",
+      "x": 168,
+      "y": 506
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}

@@ -1,0 +1,71 @@
+{
+  "display": "clay",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "box1",
+      "parms": {},
+      "type": "box",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["box1"],
+      "name": "extrude_top",
+      "parms": {
+        "dist": 0.800000012,
+        "group": "@P.y > 0.4"
+      },
+      "type": "polyextrude",
+      "x": 0,
+      "y": 80.5
+    },
+    {
+      "inputs": ["extrude_top"],
+      "name": "extrude_sides",
+      "parms": {
+        "dist": 0.5,
+        "group": "abs(@P.x) > 0.45 && @P.y < 0.6"
+      },
+      "type": "polyextrude",
+      "x": 0,
+      "y": 161
+    },
+    {
+      "inputs": ["extrude_sides"],
+      "name": "subdivide1",
+      "parms": {
+        "iterations": 3
+      },
+      "type": "subdivide",
+      "x": 0,
+      "y": 241.5
+    },
+    {
+      "inputs": ["subdivide1"],
+      "name": "detail",
+      "parms": {
+        "elementsize": 0.25,
+        "height": 0.0599999987
+      },
+      "type": "mountain",
+      "x": 0,
+      "y": 322
+    },
+    {
+      "inputs": ["detail"],
+      "name": "clay",
+      "parms": {
+        "color": [0.779999971, 0.550000012, 0.419999987]
+      },
+      "type": "color",
+      "x": 0,
+      "y": 402.5
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}

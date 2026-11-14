@@ -1,0 +1,92 @@
+{
+  "display": "OUT",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "blocks",
+      "parms": {
+        "cols": 16,
+        "rows": 16,
+        "sizex": 14,
+        "sizey": 14
+      },
+      "type": "grid",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["blocks"],
+      "name": "building_attrs",
+      "parms": {
+        "snippet": "// Random building footprint, height and color per point\nfloat r = rand(@ptnum * 1.37);\nfloat centre = 1 - clamp(length(@P) / 8, 0, 1);\nfloat h = 0.3 + pow(r, 3) * 4 * centre + centre * 1.2;\n@scale = set(0.62, h, 0.62);\n@Cd = hsvtorgb(set(0.58 + rand(@ptnum + 7) * 0.08, 0.25, 0.55 + r * 0.4));\n"
+      },
+      "type": "attribwrangle",
+      "x": 0,
+      "y": 92
+    },
+    {
+      "inputs": [],
+      "name": "building",
+      "parms": {
+        "t": [0, 0.5, 0]
+      },
+      "type": "box",
+      "x": 350,
+      "y": 0
+    },
+    {
+      "inputs": ["building", "building_attrs"],
+      "name": "copy_buildings",
+      "parms": {
+        "useN": 0
+      },
+      "type": "copytopoints",
+      "x": 168,
+      "y": 184
+    },
+    {
+      "inputs": [],
+      "name": "ground",
+      "parms": {
+        "cols": 2,
+        "rows": 2,
+        "sizex": 16,
+        "sizey": 16
+      },
+      "type": "grid",
+      "x": -322,
+      "y": 184
+    },
+    {
+      "inputs": ["ground"],
+      "name": "asphalt",
+      "parms": {
+        "color": [0.200000003, 0.209999993, 0.230000004]
+      },
+      "type": "color",
+      "x": -322,
+      "y": 264.5
+    },
+    {
+      "inputs": ["asphalt", "copy_buildings", null, null, null, null, null, null],
+      "name": "merge1",
+      "parms": {},
+      "type": "merge",
+      "x": 0,
+      "y": 345
+    },
+    {
+      "inputs": ["merge1"],
+      "name": "OUT",
+      "parms": {},
+      "type": "null",
+      "x": 0,
+      "y": 425.5
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}

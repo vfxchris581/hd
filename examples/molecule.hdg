@@ -1,0 +1,83 @@
+{
+  "display": "spin",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "torus1",
+      "parms": {
+        "cols": 8,
+        "rows": 16
+      },
+      "type": "torus",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["torus1"],
+      "name": "bonds",
+      "parms": {
+        "radius": 0.0250000004
+      },
+      "type": "polywire",
+      "x": -168,
+      "y": 103.5
+    },
+    {
+      "inputs": [],
+      "name": "atom",
+      "parms": {
+        "cols": 16,
+        "rad": [0.0700000003, 0.0700000003, 0.0700000003],
+        "rows": 10
+      },
+      "type": "sphere",
+      "x": 280,
+      "y": 0
+    },
+    {
+      "inputs": ["torus1"],
+      "name": "random_color",
+      "parms": {
+        "mode": 1,
+        "seed": 4
+      },
+      "type": "color",
+      "x": 168,
+      "y": 103.5
+    },
+    {
+      "inputs": ["atom", "random_color"],
+      "name": "atoms",
+      "parms": {
+        "useN": 0
+      },
+      "type": "copytopoints",
+      "x": 84,
+      "y": 207
+    },
+    {
+      "inputs": ["bonds", "atoms", null, null, null, null, null, null],
+      "name": "merge1",
+      "parms": {},
+      "type": "merge",
+      "x": -56,
+      "y": 299
+    },
+    {
+      "inputs": ["merge1"],
+      "name": "spin",
+      "parms": {
+        "r": [25, 0, 0],
+        "r.expr": ["", "$F * 1.5", ""]
+      },
+      "type": "xform",
+      "x": -56,
+      "y": 379.5
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}
