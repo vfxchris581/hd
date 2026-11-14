@@ -33,7 +33,7 @@
       "y": 103.5
     },
     {
-      "inputs": ["smoke", "collider_color", "floor_color", null, null, null, null, null],
+      "inputs": ["smoke", "copper", "floor_color", null, null, null, null, null],
       "name": "merge1",
       "parms": {},
       "type": "merge",
@@ -60,6 +60,17 @@
       "type": "color",
       "x": 420,
       "y": 103.5
+    },
+    {
+      "inputs": ["collider_color"],
+      "name": "copper",
+      "parms": {
+        "metal": 1,
+        "rough": 0.300000012
+      },
+      "type": "material",
+      "x": 420,
+      "y": 172.5
     },
     {
       "inputs": [],
@@ -94,5 +105,19 @@
     }
   ],
   "range": [1, 240],
+  "render": {
+    "bounces": 4,
+    "curveWidth": 0.0120000001,
+    "exposure": 1,
+    "ground": false,
+    "groundY": 0,
+    "height": 540,
+    "samples": 64,
+    "skyIntensity": 1,
+    "sunAzimuth": 40,
+    "sunElevation": 50,
+    "sunIntensity": 3,
+    "width": 960
+  },
   "version": 1
 }

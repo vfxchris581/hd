@@ -4,6 +4,7 @@
 #include "Expr.h"
 #include "Geometry.h"
 #include "Json.h"
+#include "RenderSettings.h"
 #include <functional>
 #include <memory>
 #include <string>
@@ -183,6 +184,7 @@ public:
     float fps = 24.f;
     int frameStart = 1;
     int frameEnd = 240;
+    RenderSettings render;
 
     // Cook node (and its inputs as needed). Returns true if anything recooked.
     bool cook(Node* n);

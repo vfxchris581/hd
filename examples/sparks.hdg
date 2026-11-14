@@ -52,6 +52,17 @@
       "y": 184
     },
     {
+      "inputs": ["streaks"],
+      "name": "glow",
+      "parms": {
+        "class": 1,
+        "emit": 6
+      },
+      "type": "material",
+      "x": 0,
+      "y": 276
+    },
+    {
       "inputs": [],
       "name": "ground",
       "parms": {
@@ -75,12 +86,12 @@
       "y": 184
     },
     {
-      "inputs": ["floor_color", "streaks", "emitter", null, null, null, null, null],
+      "inputs": ["floor_color", "glow", "emitter", null, null, null, null, null],
       "name": "merge1",
       "parms": {},
       "type": "merge",
       "x": 154,
-      "y": 287.5
+      "y": 368
     },
     {
       "inputs": ["merge1"],
@@ -88,9 +99,23 @@
       "parms": {},
       "type": "null",
       "x": 154,
-      "y": 368
+      "y": 448.5
     }
   ],
   "range": [1, 240],
+  "render": {
+    "bounces": 4,
+    "curveWidth": 0.0120000001,
+    "exposure": 1,
+    "ground": false,
+    "groundY": 0,
+    "height": 540,
+    "samples": 64,
+    "skyIntensity": 1,
+    "sunAzimuth": 40,
+    "sunElevation": 50,
+    "sunIntensity": 3,
+    "width": 960
+  },
   "version": 1
 }

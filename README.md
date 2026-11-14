@@ -4,23 +4,24 @@ HD is a node-based procedural 3D program in the spirit of Houdini. It's a native
 
 ![HD with an animated wrangle network](docs/screenshot-ripples.png)
 
-So far it has the **procedural core** (geometry engine, node graph, a VEX-like snippet language, viewport, Houdini-style UI) a **particle system** (POP solver), and **smoke and fire** (Pyro solver with volume rendering).
+So far it has the **procedural core** (geometry engine, node graph, a VEX-like snippet language, viewport, Houdini-style UI) a **particle system** (POP solver), **smoke and fire** (Pyro solver with volume rendering), and a **path-traced Render View** that saves images and sequences.
 
 ## Features
 
 - **Network editor.** Nodes flow top to bottom as in Houdini. Press **Tab** (or right-click) to open a searchable node menu. Drag from an output to an input to connect; drag a wire onto empty space to add a node that's already connected. The **blue flag** sets the display node and the **yellow flag** bypasses a node. Also: box select, duplicate, rename, error badges and per-node cook stats.
-- **33 nodes**:
+- **34 nodes**:
   - Generators: Box, Sphere, Grid, Tube, Torus, Circle, Line, File (OBJ)
   - Modifiers: Transform, Merge, Subdivide (Catmull-Clark), PolyExtrude, Fuse, Facet, Reverse, Blast, PolyWire
   - Deformers: Mountain (fractal noise), Smooth, Peak, Point Jitter
   - Points: Scatter (area weighted), Copy to Points (orients to `N`/`up`, scales by `pscale`/`scale`, transfers `Cd`)
-  - Attributes: Attribute Wrangle, Attribute Create, Color, Normal
+  - Attributes: Attribute Wrangle, Attribute Create, Color, Normal, Material
   - Utility: Null, Switch
   - Simulation: POP Solver, Trail, Pyro Solver
   - Volumes: Fog Volume
 - **VEX-lite.** A small snippet language for Attribute Wrangle, expression groups and parameter expressions. It supports `@P`, `@N`, `@Cd`, `v@foo`/`f@foo`, `@ptnum`, `@Time`, `@Frame`, `if`/`for`, vector math, `noise`, `curlnoise`, `rand`, `fit`, `hsvtorgb` and more.
 - **Particles.** The POP Solver emits from any surface or point set (continuous or a single burst) and simulates frame by frame: gravity, wind, air resistance, curl-noise turbulence, ground and sphere collisions (bounce, stick or die), and color and size over life. A **POP wrangle** snippet runs every substep with `@v`, `@age`, `@life`, `@id` and `@TimeInc`. Simulated frames are cached, so scrubbing back is instant; the blue bar on the timeline shows what's cached. Changing the solver or anything upstream re-simulates. Trail turns velocities into streaks.
 - **Smoke and fire.** The Pyro Solver is a grid fluid simulation. Smoke is emitted from any closed mesh (or points), rises with buoyancy, swirls (vorticity confinement plus curl-noise turbulence), fades and cools, and flows around an optional collider mesh. Turn up **Fire Intensity** to make hot gas glow. Frames are cached like particles. Fog Volume fills a mesh with static fog. Volumes are raymarched in the viewport with self-shadowing and are correctly hidden behind solid geometry. Volumes follow Transform (move and scale, not rotate) and Merge; they aren't written by OBJ/PLY export.
+- **Render View.** A progressive path tracer renders the displayed node from the Scene View camera: sun with soft shadows, sky light, bounced light, glossy and metallic surfaces, glowing (emissive) surfaces and particles, and smoke and fire with shadows. The **Material** node sets roughness, metallic and glow per primitive or point. Sun, sky, exposure, ground plane and curve thickness are under **Settings** and are saved with the scene, along with the camera. **Save Image** writes a PNG; **Render Sequence** renders the timeline range to numbered PNGs. PNGs are written uncompressed, so they are large (about 2.7 MB at 1280 x 720).
 - **Animation.** Right-click any parameter and choose **Add Expression** (e.g. `sin($T*2)`, `$F*1.5`). Nodes that depend on time recook during playback; everything else stays cached.
 - **Groups.** Group fields take `0-10 15 20-40:2`, an expression such as `@P.y > 0`, and `!` to invert.
 - **Viewport.** Smooth-shaded surfaces with wireframe overlay, points (sized by `pscale` for point clouds), normals, point and primitive numbers, a ground grid and an axis gizmo. Rendering uses 4× MSAA.
@@ -28,6 +29,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 - **Timeline.** Play, step, set the frame range and fps.
 - **Files and history.** Undo/redo for everything, scenes saved as `.hdg` (readable JSON), OBJ import/export and PLY point export. You can drag `.hdg` and `.obj` files onto the window.
 - **`hdc`.** A headless command-line tool, similar to `hbatch`, for cooking scenes and exporting geometry or whole frame sequences.
+
+![Render View](docs/screenshot-render.png)
 
 ![Smoke flowing around a collider](docs/screenshot-smoke.png)
 
@@ -112,6 +115,8 @@ hdc nodes                                   # list node types
 hdc info examples/terrain.hdg               # cook every node and print stats
 hdc cook examples/city.hdg city.obj         # export the display node
 hdc frames examples/ripples.hdg out_$F.obj 1 48   # export a frame sequence
+hdc render examples/smoke.hdg smoke.png --frame 90 --samples 64   # path-trace a frame
+hdc render examples/fire.hdg fire.png --frames 1 48          # fire.0001.png ...
 hdc demo terrain my_scene.hdg               # write a demo scene
 ```
 
@@ -120,7 +125,7 @@ hdc demo terrain my_scene.hdg               # write a demo scene
 ```
 src/core/     engine (no UI deps): Geometry + attributes, node graph with cook caching
               and time dependence, VEX-lite compiler/interpreter, SOP nodes, particle
-              and smoke solvers with per-frame caches, voxel volumes, OBJ/PLY, JSON scene format
+              and smoke solvers with per-frame caches, voxel volumes, CPU path tracer, OBJ/PLY, JSON scene format
 src/render/   OpenGL 3.3 core renderer (own loader, MSAA framebuffer, shaders)
 src/app/      Dear ImGui UI: network editor, parameters, viewport, spreadsheet, timeline
 src/tools/    hdc command-line tool
@@ -134,5 +139,5 @@ A node recooks only when its parameters, inputs or bypass state change, or when 
 1. ~~Particles / POP solver~~ — done. Next for particles: collisions against arbitrary meshes, particle-to-particle forces.
 2. ~~Smoke and fire~~ — done (dense grids). Next for volumes: sparse grids, volume wrangle, convert volumes to and from meshes.
 3. Packed primitives and instancing, plus a GPU path for heavy copies.
-4. Path-traced render view (materials, lights) and ROP sequence output.
+4. ~~Path-traced render view~~ — done. Next for rendering: denoising, textures, area lights, depth of field, compressed image output.
 5. Subnetworks and digital assets, Python scripting, multithreaded cooking.

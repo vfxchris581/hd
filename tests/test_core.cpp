@@ -4,9 +4,11 @@
 #include "core/GeoIO.h"
 #include "core/Node.h"
 #include "core/Ops.h"
+#include "core/PathTracer.h"
 #include "core/Volume.h"
 #include <cstdio>
 #include <cmath>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <set>
@@ -537,6 +539,89 @@ TEST(volumes_and_pyro) {
     bool once = true;
     for (int h : hits) once &= h == 1;
     CHECK(once);
+}
+
+TEST(render_and_material) {
+    Graph g;
+    Node* box = g.createNode("box");
+    Node* mat = g.createNode("material");
+    g.connect(box, mat, 0);
+    mat->parm("group")->str = "@P.y > 0.4";
+    mat->parm("emit")->val[0] = 2; mat->parm("metal")->val[0] = 1;
+    mat->parm("setcolor")->val[0] = 1;
+    g.cook(mat);
+    CHECK(mat->error().empty());
+    const Attrib* e = mat->geometry().findAttrib(AttribClass::Prim, "emit");
+    const Attrib* r = mat->geometry().findAttrib(AttribClass::Prim, "rough");
+    CHECK(e && r && mat->geometry().findAttrib(AttribClass::Prim, "Cd"));
+    if (e && r) {
+        int lit = 0;
+        for (size_t i = 0; i < e->count(); ++i) lit += e->getF(i) > 0;
+        CHECK(lit == 1);            // only the top face
+        NEAR(r->getF(0), 0.5f);     // others keep the default
+    }
+    // settings (and camera) survive a save/load round trip
+    g.render.samples = 7; g.render.sunElevation = 33; g.render.ground = true;
+    g.render.hasCamera = true; g.render.camYaw = 10; g.render.camDist = 5;
+    Graph g2;
+    CHECK(g2.fromJson(Json::parse(g.toJson().dump())));
+    CHECK(g2.render.samples == 7 && g2.render.ground && g2.render.hasCamera);
+    NEAR(g2.render.sunElevation, 33); NEAR(g2.render.camYaw, 10); NEAR(g2.render.camDist, 5);
+    // render a small image: finishes, is deterministic, shows the object against the backdrop
+    RenderSettings rs;
+    rs.width = 64; rs.height = 48; rs.samples = 4; rs.camDist = 4;
+    PathTracer pt;
+    CHECK(!pt.running());
+    pt.start(mat->geometry(), rs);
+    pt.wait();
+    CHECK(pt.samplesDone() == 4 && !pt.running());
+    std::vector<uint8_t> a, b; int w = 0, h = 0; uint64_t ver = 0;
+    CHECK(pt.fetch(a, w, h, ver));
+    CHECK(w == 64 && h == 48 && a.size() == 64u * 48u * 4u);
+    CHECK(!pt.fetch(b, w, h, ver)); // nothing newer
+    if (a.size() == 64u * 48u * 4u) {
+        auto px = [&](int x, int y) { return int(a[(size_t(y) * 64 + size_t(x)) * 4]) + a[(size_t(y) * 64 + size_t(x)) * 4 + 1] + a[(size_t(y) * 64 + size_t(x)) * 4 + 2]; };
+        CHECK(std::abs(px(32, 24) - px(2, 2)) > 30);
+        CHECK(px(2, 2) > px(2, 45)); // backdrop is lighter at the top
+        pt.start(mat->geometry(), rs);
+        pt.wait();
+        ver = 0;
+        CHECK(pt.fetch(b, w, h, ver) && a == b);
+        // PNG file
+        std::string path = "hd_test_render.png", err;
+        CHECK(writePng(path, a, w, h, &err));
+        FILE* f = std::fopen(path.c_str(), "rb");
+        CHECK(f != nullptr);
+        if (f) {
+            unsigned char sig[8] = {0};
+            size_t got = std::fread(sig, 1, 8, f);
+            std::fseek(f, 0, SEEK_END);
+            long size = std::ftell(f);
+            std::fclose(f);
+            CHECK(got == 8 && sig[1] == 'P' && sig[2] == 'N' && sig[3] == 'G');
+            CHECK(size > 64 * 48 * 3);
+            std::remove(path.c_str());
+        }
+    }
+    // stopping mid-render returns promptly and leaves the tracer reusable
+    rs.samples = 100000;
+    pt.start(mat->geometry(), rs);
+    pt.stop();
+    CHECK(!pt.running());
+    // volumes and loose points render without issue
+    Node* sph = g.createNode("sphere");
+    Node* fog = g.createNode("fogvolume");
+    fog->parm("voxelsize")->val[0] = 0.1f;
+    g.connect(sph, fog, 0);
+    Node* sc = g.createNode("scatter");
+    g.connect(sph, sc, 0);
+    Node* m = g.createNode("merge");
+    g.connect(fog, m, 0); g.connect(sc, m, 1);
+    g.cook(m);
+    rs.samples = 2;
+    pt.start(m->geometry(), rs);
+    pt.wait();
+    CHECK(pt.samplesDone() == 2);
 }
 
 TEST(demo_scenes_cook_cleanly) {

@@ -24,6 +24,7 @@ add_library(hd_core STATIC
   src/core/Nodes.cpp
   src/core/Noise.cpp
   src/core/Ops.cpp
+  src/core/PathTracer.cpp
   src/core/Pyro.cpp
   src/core/Sim.cpp
   src/core/Volume.cpp
@@ -104,6 +105,7 @@ if(HD_BUILD_APP)
     src/app/NetworkEditor.cpp
     src/app/ParmPane.cpp
     src/app/Panels.cpp
+    src/app/RenderView.cpp
     src/app/Theme.cpp
   )
   target_link_libraries(hd_app PUBLIC hd_render imgui glfw)

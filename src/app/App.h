@@ -1,5 +1,6 @@
 #pragma once
 #include "core/Node.h"
+#include "core/PathTracer.h"
 #include "render/Renderer.h"
 #include <set>
 #include <string>
@@ -44,7 +45,7 @@ private:
     void drawNodeMenu(App& app);
 };
 
-enum class FileDialogMode { None, Open, SaveAs, ImportObj, ExportObj, ChooseFileParm };
+enum class FileDialogMode { None, Open, SaveAs, ImportObj, ExportObj, ChooseFileParm, SaveImage, SaveSequence };
 
 class App {
 public:
@@ -95,6 +96,9 @@ public:
     void drawParameters();
     void drawSpreadsheet();
     void drawTimeline();
+    void drawRenderView();
+    void startRender();
+    bool rendering() const { return tracer_.running(); }
     void drawStatusLine();
     void drawMenuBar();
     void drawFileDialog();
@@ -135,6 +139,17 @@ private:
     std::string lastTitle_;
     float viewportW_ = 0, viewportH_ = 0;
     bool frameOnNextCook_ = true;
+
+    // render view
+    PathTracer tracer_;
+    unsigned renderTex_ = 0;
+    int renderW_ = 0, renderH_ = 0;
+    uint64_t renderVersion_ = 0;
+    std::vector<uint8_t> renderImg_;
+    bool seqActive_ = false, seqWaiting_ = false;
+    int seqFrame_ = 0, seqEnd_ = 0, seqCount_ = 0;
+    std::string seqBase_;
+    void syncCameraToScene();
 
     // file dialog
     FileDialogMode fileMode_ = FileDialogMode::None;

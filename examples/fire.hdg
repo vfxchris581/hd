@@ -104,5 +104,19 @@
     }
   ],
   "range": [1, 240],
+  "render": {
+    "bounces": 4,
+    "curveWidth": 0.0120000001,
+    "exposure": 1,
+    "ground": false,
+    "groundY": 0,
+    "height": 540,
+    "samples": 64,
+    "skyIntensity": 1,
+    "sunAzimuth": 40,
+    "sunElevation": 50,
+    "sunIntensity": 3,
+    "width": 960
+  },
   "version": 1
 }

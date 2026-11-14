@@ -1,6 +1,6 @@
 // Linux developer check: runs the full HD UI headlessly (GLFW null platform + EGL
 // surfaceless context), simulates a little input, and writes screenshots.
-//   hd_ui_screenshot <out_prefix> [demo [frame]]
+//   hd_ui_screenshot <out_prefix> [demo [frame [render_samples]]]
 #include "app/App.h"
 #include "core/Demo.h"
 #include "render/GL.h"
@@ -12,7 +12,9 @@
 #include <cstdlib>
 #include <dlfcn.h>
 #include <filesystem>
+#include <chrono>
 #include <string>
+#include <thread>
 
 typedef void* EGLDisplay; typedef void* EGLConfig; typedef void* EGLContext;
 typedef int EGLint; typedef unsigned EGLenum; typedef unsigned EGLBoolean;
@@ -113,6 +115,16 @@ int main(int argc, char** argv) {
     app.frameGeometry();
     for (int i = 0; i < 3; ++i) runFrame();
     savePPM(prefix + "_1.ppm", W, H);
+    if (argc > 4) { // render view
+        app.graph.render.samples = std::atoi(argv[4]);
+        app.startRender();
+        ImGui::SetWindowFocus("Render View");
+        while (app.rendering()) { runFrame(); std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
+        for (int i = 0; i < 3; ++i) runFrame();
+        savePPM(prefix + "_render.ppm", W, H);
+        ImGui::SetWindowFocus("Scene View");
+        runFrame();
+    }
 
     // Select a node with interesting parameters, show the spreadsheet tab, open Tab menu
     for (auto& n : app.graph.nodes())

@@ -2,6 +2,7 @@
 #include "core/Demo.h"
 #include "core/GeoIO.h"
 #include "core/Node.h"
+#include "core/PathTracer.h"
 #include <cstdio>
 #include <cstring>
 #include <string>
@@ -14,6 +15,8 @@ static void usage() {
         "  hdc info   <scene.hdg> [--frame N]            list nodes and cook stats\n"
         "  hdc cook   <scene.hdg> <out.obj|out.ply> [--node NAME] [--frame N]\n"
         "  hdc frames <scene.hdg> <out_$F.obj> <start> <end> [--node NAME]   export a sequence\n"
+        "  hdc render <scene.hdg> <out.png> [--frame N | --frames A B] [--samples N] [--size W H] [--node NAME]\n"
+        "             path-trace the scene (a sequence writes out.0001.png, out.0002.png, ...)\n"
         "  hdc demo   <name> <out.hdg>                   write a demo scene\n"
         "  hdc demos                                     list demo scenes\n"
         "  hdc nodes                                     list node types\n");
@@ -47,6 +50,49 @@ int main(int argc, char** argv) {
         std::string err;
         if (!g.save(argv[3], &err)) { std::printf("%s\n", err.c_str()); return 1; }
         std::printf("wrote %s\n", argv[3]);
+        return 0;
+    }
+    if (cmd == "render" && argc >= 4) {
+        Graph g;
+        std::string err;
+        if (!g.load(argv[2], &err)) { std::printf("error: %s\n", err.c_str()); return 1; }
+        Node* target = g.displayNode();
+        if (const char* n = opt(argc, argv, "--node")) target = g.findNode(n);
+        if (!target) { std::printf("error: no node to render\n"); return 1; }
+        RenderSettings rs = g.render;
+        if (const char* s = opt(argc, argv, "--samples")) rs.samples = std::atoi(s);
+        for (int i = 1; i + 2 < argc; ++i)
+            if (!std::strcmp(argv[i], "--size")) { rs.width = std::atoi(argv[i + 1]); rs.height = std::atoi(argv[i + 2]); }
+        int a = int(g.frame), b = int(g.frame);
+        bool seq = false;
+        if (const char* f = opt(argc, argv, "--frame")) a = b = std::atoi(f);
+        for (int i = 1; i + 2 < argc; ++i)
+            if (!std::strcmp(argv[i], "--frames")) { a = std::atoi(argv[i + 1]); b = std::atoi(argv[i + 2]); seq = true; }
+        PathTracer pt;
+        for (int f = a; f <= b; ++f) {
+            g.frame = float(f);
+            g.cook(target);
+            if (!target->error().empty()) { std::printf("cook error in %s: %s\n", target->name().c_str(), target->error().c_str()); return 1; }
+            RenderSettings r = rs;
+            if (!r.hasCamera) { // frame the geometry like the viewport does
+                Vec3 mn, mx;
+                target->geometry().bounds(mn, mx);
+                r.camTarget = (mn + mx) * 0.5f;
+                r.camDist = std::max(length(mx - mn) * 0.5f, 0.05f) / std::sin(radians(r.camFov) * 0.5f) * 1.1f;
+            }
+            pt.start(target->geometry(), r);
+            pt.wait();
+            std::vector<uint8_t> img; int w = 0, h = 0; uint64_t ver = 0;
+            pt.fetch(img, w, h, ver);
+            std::string path = argv[3];
+            if (seq) {
+                char num[16]; std::snprintf(num, sizeof num, ".%04d", f);
+                size_t dot = path.rfind('.');
+                path.insert(dot == std::string::npos ? path.size() : dot, num);
+            }
+            if (!writePng(path, img, w, h, &err)) { std::printf("%s\n", err.c_str()); return 1; }
+            std::printf("frame %d -> %s (%dx%d, %d samples, %.1fs)\n", f, path.c_str(), w, h, pt.samplesDone(), pt.secondsElapsed());
+        }
         return 0;
     }
     if ((cmd == "info" || cmd == "cook" || cmd == "frames") && argc >= 3) {

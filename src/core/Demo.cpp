@@ -172,16 +172,19 @@ static bool buildDemoSceneImpl(Graph& g, const std::string& name) {
         Node* tr = g.createNode("trail", 0, 160, "streaks");
         setF(tr, "length", 0.035f); setF(tr, "keeppts", 1);
         g.connect(pop, tr, 0);
+        Node* glow = g.createNode("material", 0, 240, "glow");
+        setF(glow, "class", 1); setF(glow, "emit", 6);
+        g.connect(tr, glow, 0);
         Node* ground = g.createNode("grid", 230, 80, "ground");
         setF(ground, "sizex", 12); setF(ground, "sizey", 12); setF(ground, "rows", 2); setF(ground, "cols", 2);
         Node* gc = g.createNode("color", 230, 160, "floor_color");
         setV(gc, "color", Vec3(0.16f, 0.17f, 0.19f));
         g.connect(ground, gc, 0);
-        Node* m = g.createNode("merge", 110, 250, "merge1");
+        Node* m = g.createNode("merge", 110, 320, "merge1");
         g.connect(gc, m, 0);
-        g.connect(tr, m, 1);
+        g.connect(glow, m, 1);
         g.connect(em, m, 2);
-        Node* out = g.createNode("null", 110, 320, "OUT");
+        Node* out = g.createNode("null", 110, 390, "OUT");
         g.connect(m, out, 0);
         g.setDisplayNode(out);
         g.frameEnd = 240;
@@ -214,7 +217,10 @@ static bool buildDemoSceneImpl(Graph& g, const std::string& name) {
             Node* cc = g.createNode("color", 300, 90, "collider_color");
             setV(cc, "color", Vec3(0.75f, 0.42f, 0.2f));
             g.connect(col, cc, 0);
-            g.connect(cc, m, 1);
+            Node* mat = g.createNode("material", 300, 150, "copper");
+            setF(mat, "rough", 0.3f); setF(mat, "metal", 1);
+            g.connect(cc, mat, 0);
+            g.connect(mat, m, 1);
             setF(pyro, "buoyancy", 5); setF(pyro, "dissipation", 0.06f); setF(pyro, "cooling", 0.35f); setF(pyro, "weight", 0.2f);
             setF(pyro, "turb", 1.6f); setF(pyro, "vorticity", 5); setF(pyro, "rdensity", 1.6f); setF(pyro, "voxelsize", 0.065f);
         }

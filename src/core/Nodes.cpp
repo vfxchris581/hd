@@ -840,6 +840,54 @@ std::vector<NodeType> buildTypes() {
         add(t);
     }
 
+    {
+        NodeType t; t.name = "material"; t.label = "Material"; t.category = "Attributes";
+        t.description = "Sets surface properties for the Render View: color, roughness, metallic and glow.";
+        t.minInputs = 1; t.maxInputs = 1;
+        t.parms = {M("class", "Apply To", {"Primitives", "Points"}), S("group", "Group", "", "Numbers (0-5 8) or expression (@P.y > 0)"),
+                   T("setcolor", "Set Color", false), V("color", "Color", Vec3(0.8f, 0.8f, 0.8f), 0, 1), F("rough", "Roughness", 0.5f, 0, 1),
+                   F("metal", "Metallic", 0, 0, 1), F("emit", "Glow (Emission)", 0, 0, 10)};
+        t.parms[3].help = "color";
+        t.cook = [](CookContext& c) {
+            c.out = c.input(0);
+            Geometry& g = c.out;
+            AttribClass cls = c.i("class") == 0 ? AttribClass::Prim : AttribClass::Point;
+            std::vector<char> sel;
+            std::string err;
+            if (!selectElements(g, cls, c.s("group"), c.frame(), c.fps(), sel, err)) { c.error(err); return; }
+            float rough = c.f("rough"), metal = c.f("metal"), emit = c.f("emit");
+            Vec3 col = c.v("color");
+            Attrib* Cd = nullptr;
+            if (c.b("setcolor")) {
+                AttribClass other = cls == AttribClass::Point ? AttribClass::Prim : AttribClass::Point;
+                // keep whichever class already carries color so the result stays visible
+                Cd = g.findAttrib(other, "Cd") ? nullptr : &g.addAttrib(cls, "Cd", 3, Vec3(1));
+                if (!Cd) {
+                    // color lives on the other class: convert it so this class can be set
+                    const Attrib src = *g.findAttrib(other, "Cd");
+                    g.removeAttrib(other, "Cd");
+                    Cd = &g.addAttrib(cls, "Cd", 3, Vec3(1));
+                    if (cls == AttribClass::Prim) {
+                        for (size_t i = 0; i < g.numPrims(); ++i) if (g.prims[i].count) Cd->setV(i, src.getV(size_t(g.primVertex(int(i), 0))));
+                    } else {
+                        for (size_t i = 0; i < g.numPrims(); ++i)
+                            for (int k = 0; k < g.prims[i].count; ++k) Cd->setV(size_t(g.primVertex(int(i), k)), src.getV(i));
+                    }
+                }
+            }
+            Attrib& aR = g.addAttrib(cls, "rough", 1, Vec3(0.5f));
+            Attrib& aM = g.addAttrib(cls, "metal", 1);
+            Attrib& aE = g.addAttrib(cls, "emit", 1);
+            Cd = c.b("setcolor") ? g.findAttrib(cls, "Cd") : nullptr;
+            for (size_t i = 0; i < sel.size(); ++i) {
+                if (!sel[i]) continue;
+                aR.setF(i, rough); aM.setF(i, metal); aE.setF(i, emit);
+                if (Cd) Cd->setV(i, col);
+            }
+        };
+        add(t);
+    }
+
     // ================================================================ UTILITY
     {
         NodeType t; t.name = "null"; t.label = "Null"; t.category = "Utility";

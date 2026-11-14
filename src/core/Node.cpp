@@ -143,6 +143,7 @@ void Graph::clear() {
     display_ = nullptr;
     nextId_ = 1;
     frame = 1;
+    render = RenderSettings();
 }
 
 std::string Graph::uniqueName(const std::string& base) const {
@@ -334,6 +335,21 @@ Json Graph::toJson() const {
     range.push(frameStart); range.push(frameEnd);
     root["range"] = range;
     root["display"] = display_ ? display_->name() : std::string();
+    {
+        const RenderSettings& r = render;
+        Json j = Json::object();
+        j["width"] = r.width; j["height"] = r.height; j["samples"] = r.samples; j["bounces"] = r.bounces;
+        j["sunAzimuth"] = double(r.sunAzimuth); j["sunElevation"] = double(r.sunElevation);
+        j["sunIntensity"] = double(r.sunIntensity); j["skyIntensity"] = double(r.skyIntensity);
+        j["exposure"] = double(r.exposure); j["curveWidth"] = double(r.curveWidth);
+        j["ground"] = r.ground; j["groundY"] = double(r.groundY);
+        if (r.hasCamera) {
+            Json c = Json::array();
+            for (float v : {r.camTarget.x, r.camTarget.y, r.camTarget.z, r.camYaw, r.camPitch, r.camDist, r.camFov}) c.push(double(v));
+            j["camera"] = c;
+        }
+        root["render"] = j;
+    }
     Json nodes = Json::array();
     for (auto& n : nodes_) {
         Json jn = Json::object();
@@ -387,6 +403,22 @@ bool Graph::fromJson(const Json& j, std::string* error) {
     if (j.get("range").size() == 2) {
         frameStart = int(j.get("range")[0].num(1));
         frameEnd = int(j.get("range")[1].num(240));
+    }
+    if (j.get("render").isObject()) {
+        const Json& r = j.get("render");
+        RenderSettings d;
+        render.width = int(r.get("width").num(d.width)); render.height = int(r.get("height").num(d.height));
+        render.samples = int(r.get("samples").num(d.samples)); render.bounces = int(r.get("bounces").num(d.bounces));
+        render.sunAzimuth = float(r.get("sunAzimuth").num(d.sunAzimuth)); render.sunElevation = float(r.get("sunElevation").num(d.sunElevation));
+        render.sunIntensity = float(r.get("sunIntensity").num(d.sunIntensity)); render.skyIntensity = float(r.get("skyIntensity").num(d.skyIntensity));
+        render.exposure = float(r.get("exposure").num(d.exposure)); render.curveWidth = float(r.get("curveWidth").num(d.curveWidth));
+        render.ground = r.get("ground").boolean(d.ground); render.groundY = float(r.get("groundY").num(d.groundY));
+        const Json& c = r.get("camera");
+        if (c.size() == 7) {
+            render.hasCamera = true;
+            render.camTarget = Vec3(float(c[0].num()), float(c[1].num()), float(c[2].num()));
+            render.camYaw = float(c[3].num()); render.camPitch = float(c[4].num()); render.camDist = float(c[5].num()); render.camFov = float(c[6].num());
+        }
     }
     const Json& nodes = j.get("nodes");
     std::vector<std::pair<Node*, const Json*>> created;

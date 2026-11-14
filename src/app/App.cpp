@@ -32,7 +32,10 @@ bool App::init(GLFWwindow* window, const std::string& startupFile) {
     return true;
 }
 
-void App::shutdown() { renderer.shutdown(); }
+void App::shutdown() {
+    tracer_.stop();
+    renderer.shutdown();
+}
 
 bool App::handleCloseRequest() {
     if (!dirty_ || allowClose_) return true;
@@ -211,12 +214,24 @@ bool App::loadScene(const std::string& path) {
     currentFile_ = path;
     dirty_ = false;
     frameOnNextCook_ = true;
+    if (graph.render.hasCamera) { // restore the saved view
+        const RenderSettings& r = graph.render;
+        camera.target = r.camTarget; camera.yaw = r.camYaw; camera.pitch = r.camPitch; camera.dist = r.camDist; camera.fovY = r.camFov;
+        frameOnNextCook_ = false;
+    }
     network.requestFrameAll();
     status(err.empty() ? "Opened " + path : "Opened with warnings: " + err, !err.empty());
     return true;
 }
 
+void App::syncCameraToScene() {
+    RenderSettings& r = graph.render;
+    r.hasCamera = true;
+    r.camTarget = camera.target; r.camYaw = camera.yaw; r.camPitch = camera.pitch; r.camDist = camera.dist; r.camFov = camera.fovY;
+}
+
 bool App::saveScene(const std::string& path) {
+    syncCameraToScene();
     std::string err;
     if (!graph.save(path, &err)) {
         status("Save failed: " + err, true);
@@ -322,6 +337,7 @@ void App::frame() {
     drawParameters();
     drawSpreadsheet();
     drawTimeline();
+    drawRenderView();
     drawFileDialog();
     drawHelpWindows();
     if (showImGuiDemo) ImGui::ShowDemoWindow(&showImGuiDemo);
@@ -354,6 +370,7 @@ void App::buildDefaultLayout(unsigned dockIdIn) {
     ImGuiID right = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, 0.42f, nullptr, &dockId);
     ImGuiID rightBottom = ImGui::DockBuilderSplitNode(right, ImGuiDir_Down, 0.55f, nullptr, &right);
     ImGui::DockBuilderDockWindow("Scene View", dockId);
+    ImGui::DockBuilderDockWindow("Render View", dockId);
     ImGui::DockBuilderDockWindow("Geometry Spreadsheet", dockId);
     ImGui::DockBuilderDockWindow("Parameters", right);
     ImGui::DockBuilderDockWindow("Network", rightBottom);
@@ -452,6 +469,9 @@ void App::openFileDialog(FileDialogMode mode) {
         std::string n = currentFile_.empty() ? "untitled.hdg" : fs::path(currentFile_).filename().string();
         std::snprintf(fileName_, sizeof fileName_, "%s", n.c_str());
         if (!currentFile_.empty()) fileDir_ = fs::path(currentFile_).parent_path().string();
+    } else if (mode == FileDialogMode::SaveImage || mode == FileDialogMode::SaveSequence) {
+        std::string stem = currentFile_.empty() ? "render" : fs::path(currentFile_).stem().string();
+        std::snprintf(fileName_, sizeof fileName_, "%s.png", stem.c_str());
     } else if (mode == FileDialogMode::ExportObj) {
         std::snprintf(fileName_, sizeof fileName_, "%s.obj", graph.displayNode() ? graph.displayNode()->name().c_str() : "export");
     }
@@ -465,13 +485,14 @@ void App::drawFileDialog() {
     }
     ImGui::SetNextWindowSize(ImVec2(640, 460), ImGuiCond_Appearing);
     if (!ImGui::BeginPopupModal("File Browser", nullptr)) return;
-    const char* titles[] = {"", "Open Scene", "Save Scene As", "Import OBJ", "Export Geometry (.obj / .ply)", "Choose File"};
+    const char* titles[] = {"", "Open Scene", "Save Scene As", "Import OBJ", "Export Geometry (.obj / .ply)", "Choose File", "Save Rendered Image", "Render Sequence To (frame numbers are added)"};
     ImGui::TextUnformatted(titles[int(fileMode_)]);
     ImGui::Separator();
-    bool saving = fileMode_ == FileDialogMode::SaveAs || fileMode_ == FileDialogMode::ExportObj;
+    bool saving = fileMode_ == FileDialogMode::SaveAs || fileMode_ == FileDialogMode::ExportObj || fileMode_ == FileDialogMode::SaveImage || fileMode_ == FileDialogMode::SaveSequence;
     std::vector<std::string> exts;
     if (fileMode_ == FileDialogMode::Open || fileMode_ == FileDialogMode::SaveAs) exts = {".hdg"};
     else if (fileMode_ == FileDialogMode::ExportObj) exts = {".obj", ".ply"};
+    else if (fileMode_ == FileDialogMode::SaveImage || fileMode_ == FileDialogMode::SaveSequence) exts = {".png"};
     else exts = {".obj"};
 
     // path bar
@@ -573,6 +594,20 @@ void App::drawFileDialog() {
             }
             break;
         }
+        case FileDialogMode::SaveImage: {
+            bool ok = writePng(chosen, renderImg_, renderW_, renderH_, &err);
+            status(ok ? "Saved " + chosen : "Save failed: " + err, !ok);
+            break;
+        }
+        case FileDialogMode::SaveSequence:
+            seqBase_ = chosen;
+            seqFrame_ = graph.frameStart;
+            seqEnd_ = graph.frameEnd;
+            seqCount_ = 0;
+            seqActive_ = true;
+            seqWaiting_ = false;
+            playing = false;
+            break;
         default: break;
         }
         fileDir_ = fs::path(chosen).parent_path().string();
@@ -617,6 +652,7 @@ void App::drawHelpWindows() {
                 row("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo");
                 row("Ctrl+S / Ctrl+O / Ctrl+N", "Save / open / new");
                 row("Parameters: right-click label", "Expressions, revert to default");
+                row("Render View: Render", "Path-trace the displayed node from the viewport camera");
                 ImGui::EndTable();
             }
         }
