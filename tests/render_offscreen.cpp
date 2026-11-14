@@ -1,10 +1,11 @@
 // Linux developer check: renders a scene through the real viewport renderer
 // using a surfaceless EGL context (Mesa), and writes a PPM image.
-//   hd_render_test <scene.hdg|-> <out.ppm> [width height]
+//   hd_render_test <scene.hdg|-> <out.ppm> [width height [frame]]
 #include "core/Node.h"
 #include "render/GL.h"
 #include "render/Renderer.h"
 #include <cstdio>
+#include <cstdlib>
 #include <dlfcn.h>
 
 typedef void* EGLDisplay; typedef void* EGLConfig; typedef void* EGLContext; typedef void* EGLSurface;
@@ -63,6 +64,7 @@ int main(int argc, char** argv) {
         return 1;
     }
     hd::Node* d = g.displayNode();
+    if (argc > 5) g.frame = float(std::atof(argv[5]));
     g.cook(d);
     if (!d->error().empty()) std::printf("cook error: %s\n", d->error().c_str());
     std::printf("display %s: %zu points, %zu prims\n", d->name().c_str(), d->geometry().numPoints(), d->geometry().numPrims());

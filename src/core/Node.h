@@ -51,9 +51,20 @@ public:
     float frame() const;
     float time() const;
     float fps() const;
+    // Cook input i at another frame (for solvers). Returns false if the input is missing or errored.
+    bool inputAtFrame(int i, float frame, Geometry& out);
+    // Persistent per-node state that survives between cooks (simulation caches).
+    template <class T> T& state();
+    // Changes whenever this node's or any upstream node's parameters/wiring change (not with time).
+    uint64_t setupSignature() const;
     void error(const std::string& m);
     void warning(const std::string& m);
     bool failed() const { return failed_; }
+    // Solvers evaluate parameters at the frame being simulated rather than the current one.
+    void setEvalFrame(float f) { evalFrame_ = f; hasEvalFrame_ = true; }
+    void clearEvalFrame() { hasEvalFrame_ = false; }
+    // True if input i (or anything upstream of it) changes with time.
+    bool inputIsAnimated(int i) const;
     Node& node() { return node_; }
 
 private:
@@ -61,6 +72,9 @@ private:
     Graph& graph_;
     std::vector<const Geometry*> inputs_;
     bool failed_ = false;
+    float evalFrame_ = 0;
+    bool hasEvalFrame_ = false;
+    float evalFrame() const;
 
 public:
     Geometry& out;
@@ -113,6 +127,9 @@ public:
     const std::string& warning() const { return warning_; }
     double cookTimeMs() const { return cookMs_; }
     uint64_t cookStamp() const { return cookStamp_; }
+    uint64_t parmVersion() const { return parmVersion_; }
+    // Simulation nodes report which frames they have cached (for the timeline).
+    int simCacheStart = 0, simCacheEnd = -1;
 
 private:
     friend class Graph;
@@ -133,7 +150,13 @@ private:
     bool cookedBypass_ = false;
     std::vector<uint64_t> cookedInputStamps_;
     bool cooking_ = false;
+    std::shared_ptr<void> state_;
 };
+
+template <class T> T& CookContext::state() {
+    if (!node_.state_) node_.state_ = std::make_shared<T>();
+    return *static_cast<T*>(node_.state_.get());
+}
 
 class Graph {
 public:
@@ -165,6 +188,9 @@ public:
     bool cook(Node* n);
     // Total number of node cooks performed (for stats/tests).
     uint64_t totalCooks() const { return totalCooks_; }
+    // Hash of the parameters and wiring of n and everything upstream of it.
+    uint64_t upstreamSignature(const Node* n) const;
+    bool upstreamTimeDependent(const Node* n) const;
 
     void clear();
     Json toJson() const;

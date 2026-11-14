@@ -111,7 +111,7 @@ void main() {
     vCol = aCol;
     float s = uPixelSize;
     if (uUseScale == 1) s = 2.0 * aScale * uProj[1][1] * uViewportH * 0.5 / max(-pv.z, 1e-4);
-    gl_PointSize = clamp(s, 2.0, 96.0);
+    gl_PointSize = clamp(s, 1.5, 96.0);
 })";
 
 const char* kPointFS = R"(#version 330 core
@@ -225,7 +225,7 @@ bool Renderer::init(std::string& error) {
 
 void Renderer::shutdown() {
     if (!inited_) return;
-    for (Batch* b : {&tris_, &wire_, &curves_, &points_, &normals_, &grid_}) {
+    for (Batch* b : {&tris_, &wire_, &curves_, &points_, &loose_, &normals_, &grid_}) {
         if (b->vbo) glDeleteBuffers(1, &b->vbo);
         if (b->vao) glDeleteVertexArrays(1, &b->vao);
         *b = Batch();
@@ -321,10 +321,17 @@ void Renderer::setGeometry(const Geometry& g, uint64_t stamp) {
     boundsMin_ = mn; boundsMax_ = mx;
     float diag = std::max(length(mx - mn), 1e-3f);
     pts.reserve(g.numPoints() * 7);
+    // points not used by any primitive (particles, scattered points) are always drawn
+    std::vector<char> used(g.numPoints(), 0);
+    for (int vtx : g.vertices) used[size_t(vtx)] = 1;
+    std::vector<float> loose;
     for (size_t i = 0; i < g.numPoints(); ++i) {
+        Vec3 pc = pCd ? pCd->getV(i) : Vec3(0.95f, 0.85f, 0.35f);
+        float psz = pscale ? pscale->getF(i) : 0.02f;
         push3(pts, g.P[i]);
-        push3(pts, pCd ? pCd->getV(i) : Vec3(0.95f, 0.85f, 0.35f));
-        pts.push_back(pscale ? pscale->getF(i) : 0.02f);
+        push3(pts, pc);
+        pts.push_back(psz);
+        if (!used[i]) { push3(loose, g.P[i]); push3(loose, pc); loose.push_back(psz); }
         if (pN) {
             push3(nrm, g.P[i]); push3(nrm, Vec3(0.2f, 0.9f, 1.f));
             push3(nrm, g.P[i] + pN->getV(i) * (diag * 0.04f)); push3(nrm, Vec3(0.2f, 0.9f, 1.f));
@@ -340,6 +347,7 @@ void Renderer::setGeometry(const Geometry& g, uint64_t stamp) {
     upload(wire_, wire, 6, lineLayout, 2);
     upload(curves_, curve, 6, lineLayout, 2);
     upload(points_, pts, 7, pointLayout, 3);
+    upload(loose_, loose, 7, pointLayout, 3);
     upload(normals_, nrm, 6, lineLayout, 2);
     stats_.triangles = size_t(tris_.count / 3);
     stats_.lines = size_t(wire_.count / 2 + curves_.count / 2);
@@ -461,17 +469,20 @@ unsigned Renderer::render(int w, int h, const Camera& cam, const ViewOptions& op
     drawBatch(curves_, GL_LINES);
     if (opt.normals) drawBatch(normals_, GL_LINES);
 
-    // points (always for point clouds)
-    if (opt.points || pointCloud_) {
+    // points: loose points always (world-sized when pscale exists), all points on request
+    if (opt.points || loose_.count) {
         glEnable(GL_PROGRAM_POINT_SIZE);
         glUseProgram(progPoint_);
         setMat(progPoint_, "uView", V);
         setMat(progPoint_, "uProj", P);
-        bool useScale = pointCloud_ && hasPscale_;
-        glUniform1i(glGetUniformLocation(progPoint_, "uUseScale"), useScale ? 1 : 0);
         glUniform1f(glGetUniformLocation(progPoint_, "uPixelSize"), opt.pointSize);
         glUniform1f(glGetUniformLocation(progPoint_, "uViewportH"), float(h));
-        drawBatch(points_, GL_POINTS);
+        glUniform1i(glGetUniformLocation(progPoint_, "uUseScale"), hasPscale_ ? 1 : 0);
+        drawBatch(loose_, GL_POINTS);
+        if (opt.points) {
+            glUniform1i(glGetUniformLocation(progPoint_, "uUseScale"), 0);
+            drawBatch(points_, GL_POINTS);
+        }
         glDisable(GL_PROGRAM_POINT_SIZE);
     }
     glBindVertexArray(0);

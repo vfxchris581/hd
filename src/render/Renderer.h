@@ -75,7 +75,7 @@ private:
 
     bool inited_ = false;
     unsigned progMesh_ = 0, progLine_ = 0, progPoint_ = 0, progBg_ = 0;
-    Batch tris_, wire_, curves_, points_, normals_, grid_;
+    Batch tris_, wire_, curves_, points_, loose_, normals_, grid_;
     unsigned bgVao_ = 0;
     bool hasPscale_ = false;
     bool pointCloud_ = false;

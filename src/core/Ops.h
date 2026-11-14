@@ -11,7 +11,7 @@ namespace hd {
 // Attributes the program writes are created if missing. If results is given, it receives
 // the program's final value per element (used for expression groups).
 bool runOverElements(Geometry& g, AttribClass cls, const Program& prog, float frame, float fps,
-                     std::vector<float>* results, std::string& error);
+                     std::vector<float>* results, std::string& error, float timeInc = -1.f);
 
 // Select elements with a Houdini-like pattern:
 //   ""  or "*"        everything

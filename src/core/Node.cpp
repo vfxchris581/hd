@@ -100,19 +100,37 @@ static const Parm& requireParm(const Node& n, const char* name) {
     if (!p) throw std::runtime_error(std::string("internal: unknown parameter '") + name + "'");
     return *p;
 }
+float CookContext::evalFrame() const { return hasEvalFrame_ ? evalFrame_ : graph_.frame; }
 float CookContext::f(const char* name) const {
-    return node_.evalFloat(requireParm(node_, name), 0, graph_.frame, graph_.fps);
+    return node_.evalFloat(requireParm(node_, name), 0, evalFrame(), graph_.fps);
 }
 int CookContext::i(const char* name) const { return int(std::lround(f(name))); }
 Vec3 CookContext::v(const char* name) const {
     const Parm& p = requireParm(node_, name);
-    return {node_.evalFloat(p, 0, graph_.frame, graph_.fps), node_.evalFloat(p, 1, graph_.frame, graph_.fps),
-            node_.evalFloat(p, 2, graph_.frame, graph_.fps)};
+    float fr = evalFrame();
+    return {node_.evalFloat(p, 0, fr, graph_.fps), node_.evalFloat(p, 1, fr, graph_.fps), node_.evalFloat(p, 2, fr, graph_.fps)};
 }
 const std::string& CookContext::s(const char* name) const { return requireParm(node_, name).str; }
-float CookContext::frame() const { return graph_.frame; }
+float CookContext::frame() const { return evalFrame(); }
 float CookContext::fps() const { return graph_.fps; }
-float CookContext::time() const { return (graph_.frame - 1.f) / graph_.fps; }
+float CookContext::time() const { return (evalFrame() - 1.f) / graph_.fps; }
+bool CookContext::inputIsAnimated(int i) const {
+    if (i < 0 || i >= int(node_.inputs.size()) || !node_.inputs[size_t(i)]) return false;
+    return graph_.upstreamTimeDependent(node_.inputs[size_t(i)]);
+}
+bool CookContext::inputAtFrame(int i, float frame, Geometry& out) {
+    if (i < 0 || i >= int(node_.inputs.size()) || !node_.inputs[size_t(i)]) return false;
+    Node* in = node_.inputs[size_t(i)];
+    float saved = graph_.frame;
+    graph_.frame = frame;
+    graph_.cook(in);
+    out = in->geo_;
+    bool ok = in->error_.empty();
+    graph_.frame = saved;
+    graph_.cook(in); // leave the input cooked at the current frame
+    return ok;
+}
+uint64_t CookContext::setupSignature() const { return graph_.upstreamSignature(&node_); }
 void CookContext::error(const std::string& m) { failed_ = true; node_.error_ = m; }
 void CookContext::warning(const std::string& m) { node_.warning_ = m; }
 
@@ -212,6 +230,38 @@ std::vector<std::pair<Node*, int>> Graph::outputsOf(const Node* n) const {
         for (size_t i = 0; i < o->inputs.size(); ++i)
             if (o->inputs[i] == n) r.push_back({o.get(), int(i)});
     return r;
+}
+
+uint64_t Graph::upstreamSignature(const Node* root) const {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&h](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); h *= 1099511628211ull; };
+    std::vector<const Node*> stack{root}, seen;
+    while (!stack.empty()) {
+        const Node* n = stack.back(); stack.pop_back();
+        if (std::find(seen.begin(), seen.end(), n) != seen.end()) continue;
+        seen.push_back(n);
+        mix(uint64_t(n->id()));
+        mix(n->parmVersion_);
+        mix(n->bypass ? 2 : 1);
+        for (const Node* in : n->inputs) {
+            mix(in ? uint64_t(in->id()) + 17 : 3);
+            if (in) stack.push_back(in);
+        }
+    }
+    mix(uint64_t(fps * 1000));
+    return h;
+}
+
+bool Graph::upstreamTimeDependent(const Node* root) const {
+    std::vector<const Node*> stack{root}, seen;
+    while (!stack.empty()) {
+        const Node* n = stack.back(); stack.pop_back();
+        if (std::find(seen.begin(), seen.end(), n) != seen.end()) continue;
+        seen.push_back(n);
+        if (n->isTimeDependent()) return true;
+        for (const Node* in : n->inputs) if (in) stack.push_back(in);
+    }
+    return false;
 }
 
 bool Graph::cook(Node* n) {

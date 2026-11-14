@@ -8,6 +8,7 @@
 #include <unordered_map>
 
 namespace hd {
+void registerSimNodes(std::vector<NodeType>& types); // Sim.cpp
 namespace {
 
 // ---- parameter builders
@@ -857,6 +858,7 @@ std::vector<NodeType> buildTypes() {
         };
         add(t);
     }
+    registerSimNodes(types);
     return types;
 }
 

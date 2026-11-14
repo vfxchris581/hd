@@ -8,6 +8,7 @@
 #include <cmath>
 #include <functional>
 #include <map>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -354,7 +355,7 @@ TEST(all_nodes_cook_on_defaults) {
         g.connect(src, src2, 0);
         Node* n = g.createNode(t.name);
         CHECK(n != nullptr);
-        if (t.maxInputs >= 1) g.connect(src, n, 0);
+        if (t.maxInputs >= 1) g.connect(t.name == "trail" ? g.createNode("popsolver") : src, n, 0);
         if (t.maxInputs >= 2) g.connect(src2, n, 1);
         g.cook(n);
         if (t.name != "file" && t.name != "switch" && !n->error().empty())
@@ -364,6 +365,86 @@ TEST(all_nodes_cook_on_defaults) {
         for (auto& [nm, a] : n->geometry().primAttribs) CHECK(a.count() == n->geometry().numPrims());
         for (int v : n->geometry().vertices) CHECK(v >= 0 && v < int(n->geometry().numPoints()));
     }
+}
+
+TEST(particle_solver) {
+    Graph g;
+    Node* src = g.createNode("sphere");
+    Node* pop = g.createNode("popsolver");
+    g.connect(src, pop, 0);
+    pop->parm("rate")->val[0] = 240; // 10 per frame at 24 fps
+    pop->parm("lifevar")->val[0] = 0;
+    pop->parm("life")->val[0] = 1;   // 24 frames
+    g.frame = 1; g.cook(pop);
+    CHECK(pop->error().empty());
+    CHECK(pop->geometry().numPoints() == 10);
+    g.frame = 12; g.cook(pop);
+    CHECK(pop->geometry().numPoints() == 120);
+    CHECK(pop->simCacheStart == 1 && pop->simCacheEnd == 12);
+    const Geometry snap = pop->geometry();
+    // steady state: births balance deaths
+    g.frame = 60; g.cook(pop);
+    size_t steady = pop->geometry().numPoints();
+    CHECK(steady >= 230 && steady <= 250);
+    // ground collision keeps everything above the floor; ids are unique
+    Vec3 mn, mx; pop->geometry().bounds(mn, mx);
+    CHECK(mn.y >= -1e-4f);
+    const Attrib* id = pop->geometry().findAttrib(AttribClass::Point, "id");
+    CHECK(id != nullptr);
+    if (id) { std::set<int> ids; for (size_t i = 0; i < id->count(); ++i) ids.insert(int(id->getF(i))); CHECK(ids.size() == steady); }
+    // scrubbing back uses the cache (no re-simulation) and is identical
+    g.frame = 12; g.cook(pop);
+    CHECK(pop->geometry().numPoints() == snap.numPoints());
+    bool same = true;
+    for (size_t i = 0; i < snap.numPoints() && same; ++i) same = snap.P[i] == pop->geometry().P[i];
+    CHECK(same);
+    CHECK(pop->simCacheEnd == 60);
+    // editing a parameter (or anything upstream) invalidates the cache and re-simulates deterministically
+    src->parm("rows")->val[0] = 9; src->touch();
+    g.cook(pop);
+    CHECK(pop->simCacheEnd == 12);
+    src->parm("rows")->val[0] = 13; src->touch();
+    g.cook(pop);
+    same = pop->geometry().numPoints() == snap.numPoints();
+    for (size_t i = 0; i < snap.numPoints() && same; ++i) same = length(snap.P[i] - pop->geometry().P[i]) < 1e-5f;
+    CHECK(same);
+    // before the start frame there are no particles
+    pop->parm("startframe")->val[0] = 20; pop->touch();
+    g.cook(pop);
+    CHECK(pop->geometry().numPoints() == 0);
+    // POP wrangle + burst emission + die on collision
+    pop->parm("startframe")->val[0] = 1;
+    pop->parm("emission")->val[0] = 1;
+    pop->parm("rate")->val[0] = 500;
+    pop->parm("snippet")->str = "@v.y = 0; f@marked = 1;";
+    pop->touch();
+    g.frame = 5; g.cook(pop);
+    CHECK(pop->error().empty());
+    CHECK(pop->geometry().numPoints() == 500);
+    CHECK(pop->geometry().findAttrib(AttribClass::Point, "marked") != nullptr);
+    pop->parm("snippet")->str = "@v.y = ;"; pop->touch(); g.cook(pop);
+    CHECK(!pop->error().empty());
+    // trail makes one 2-point polyline per particle
+    pop->parm("snippet")->str = ""; pop->touch();
+    Node* tr = g.createNode("trail");
+    g.connect(pop, tr, 0);
+    g.cook(tr);
+    CHECK(tr->error().empty());
+    CHECK(tr->geometry().numPrims() == 500 && tr->geometry().numPoints() == 1000);
+    // animated emitter: particles are born where the emitter was at each frame
+    Graph g2;
+    Node* e = g2.createNode("sphere");
+    e->parm("rad")->val[0] = e->parm("rad")->val[1] = e->parm("rad")->val[2] = 0.01f;
+    e->parm("t")->expr[0] = "$F";
+    Node* p2 = g2.createNode("popsolver");
+    g2.connect(e, p2, 0);
+    for (const char* z : {"speedn", "velvar", "drag"}) p2->parm(z)->val[0] = 0;
+    p2->parm("gravity")->val[1] = 0;
+    p2->parm("life")->val[0] = 100; p2->parm("rate")->val[0] = 24;
+    g2.frame = 30; g2.cook(p2); // simulates 1..30 in one go
+    p2->geometry().bounds(mn, mx);
+    CHECK(p2->geometry().numPoints() == 30);
+    CHECK(mn.x < 1.1f && mx.x > 29.9f);
 }
 
 TEST(demo_scenes_cook_cleanly) {
@@ -378,7 +459,7 @@ TEST(demo_scenes_cook_cleanly) {
                 CHECK(n->error().empty());
             }
         }
-        CHECK(g.displayNode() && g.displayNode()->geometry().numPrims() > 0);
+        CHECK(g.displayNode() && g.displayNode()->geometry().numPoints() > 0);
         // round-trip through the file format
         Graph g2;
         CHECK(g2.fromJson(Json::parse(g.toJson().dump())));

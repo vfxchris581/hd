@@ -9,7 +9,7 @@
 namespace hd {
 
 bool runOverElements(Geometry& g, AttribClass cls, const Program& prog, float frame, float fps,
-                     std::vector<float>* results, std::string& error) {
+                     std::vector<float>* results, std::string& error, float timeInc) {
     const auto& binds = prog.attribs();
     size_t count = cls == AttribClass::Point ? g.numPoints() : g.numPrims();
     // Resolve bindings
@@ -42,6 +42,7 @@ bool runOverElements(Geometry& g, AttribClass cls, const Program& prog, float fr
     ctx.globals[int(Global::Frame)] = frame;
     ctx.globals[int(Global::Time)] = (frame - 1.f) / fps;
     ctx.globals[int(Global::Fps)] = fps;
+    ctx.globals[int(Global::TimeInc)] = timeInc > 0 ? timeInc : 1.f / fps;
     ctx.globals[int(Global::NumPt)] = float(count);
     for (size_t e = 0; e < count; ++e) {
         ctx.globals[int(Global::PtNum)] = float(e);

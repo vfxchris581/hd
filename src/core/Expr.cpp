@@ -385,6 +385,7 @@ struct ExprParser {
             std::string name = t.s;
             if (name == "Frame") { prog.usesTime_ = true; return glob(Global::Frame); }
             if (name == "Time") { prog.usesTime_ = true; return glob(Global::Time); }
+            if (name == "TimeInc") return glob(Global::TimeInc);
             if (name == "ptnum" || name == "primnum" || name == "elemnum") return glob(Global::PtNum);
             if (name == "numpt" || name == "numprim" || name == "numelem") return glob(Global::NumPt);
             PNode* n = mk(PNode::Attr);

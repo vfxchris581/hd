@@ -26,7 +26,7 @@ struct AttribBinding {
 };
 
 // Globals available to programs.
-enum class Global { Frame, Time, PtNum, NumPt, Pi, Fps, Count };
+enum class Global { Frame, Time, PtNum, NumPt, Pi, Fps, TimeInc, Count };
 
 class Program {
 public:

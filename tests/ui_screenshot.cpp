@@ -1,6 +1,6 @@
 // Linux developer check: runs the full HD UI headlessly (GLFW null platform + EGL
 // surfaceless context), simulates a little input, and writes screenshots.
-//   hd_ui_screenshot <out_prefix> [demo]
+//   hd_ui_screenshot <out_prefix> [demo [frame]]
 #include "app/App.h"
 #include "core/Demo.h"
 #include "render/GL.h"
@@ -95,6 +95,7 @@ int main(int argc, char** argv) {
     app.clearSelection();
     if (hd::Node* d = app.graph.displayNode()) app.select(d);
     app.network.requestFrameAll();
+    if (argc > 3) app.graph.frame = float(std::atof(argv[3]));
 
     auto runFrame = [&]() {
         io.DeltaTime = 1.f / 60.f;

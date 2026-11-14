@@ -9,6 +9,8 @@ const std::vector<DemoInfo>& demoScenes() {
         {"city", "Procedural City", "Boxes copied to grid points with random per-point scale and color."},
         {"sculpt", "Subdivided Sculpt", "Box -> PolyExtrude -> Catmull-Clark subdivision -> Mountain."},
         {"molecule", "Wire Molecule", "Torus edges turned into tubes with spheres on every point."},
+        {"sparks", "Particle Sparks", "POP Solver: sparks burst from a moving emitter, bounce on the ground and leave trails. Press Play."},
+        {"vortex", "Particle Vortex", "POP Solver with curl-noise turbulence and a POP wrangle that spins particles into a column. Press Play."},
     };
     return d;
 }
@@ -150,6 +152,59 @@ static bool buildDemoSceneImpl(Graph& g, const std::string& name) {
         setV(xf, "r", Vec3(25, 0, 0));
         g.connect(m, xf, 0);
         g.setDisplayNode(xf);
+        return true;
+    }
+    if (name == "sparks") {
+        Node* em = g.createNode("sphere", 0, 0, "emitter");
+        setV(em, "rad", Vec3(0.12f)); setF(em, "rows", 8); setF(em, "cols", 12);
+        em->parm("t")->expr[0] = "sin($T * 2.2) * 2";
+        em->parm("t")->expr[2] = "cos($T * 1.6) * 1.5";
+        setV(em, "t", Vec3(0, 1.6f, 0));
+        Node* pop = g.createNode("popsolver", 0, 80, "sparks");
+        setF(pop, "rate", 2500); setF(pop, "life", 1.8f); setF(pop, "lifevar", 0.6f);
+        setF(pop, "speedn", 3.2f); setF(pop, "velvar", 1.4f); setV(pop, "vel", Vec3(0, 2.5f, 0));
+        setF(pop, "drag", 0.25f); setF(pop, "bounce", 0.45f); setF(pop, "friction", 0.25f);
+        setF(pop, "pscale", 0.022f); setF(pop, "pscaleend", 0.3f);
+        setV(pop, "color", Vec3(1.6f, 1.25f, 0.55f)); setV(pop, "color2", Vec3(0.75f, 0.08f, 0.02f));
+        g.connect(em, pop, 0);
+        Node* tr = g.createNode("trail", 0, 160, "streaks");
+        setF(tr, "length", 0.035f); setF(tr, "keeppts", 1);
+        g.connect(pop, tr, 0);
+        Node* ground = g.createNode("grid", 230, 80, "ground");
+        setF(ground, "sizex", 12); setF(ground, "sizey", 12); setF(ground, "rows", 2); setF(ground, "cols", 2);
+        Node* gc = g.createNode("color", 230, 160, "floor_color");
+        setV(gc, "color", Vec3(0.16f, 0.17f, 0.19f));
+        g.connect(ground, gc, 0);
+        Node* m = g.createNode("merge", 110, 250, "merge1");
+        g.connect(gc, m, 0);
+        g.connect(tr, m, 1);
+        g.connect(em, m, 2);
+        Node* out = g.createNode("null", 110, 320, "OUT");
+        g.connect(m, out, 0);
+        g.setDisplayNode(out);
+        g.frameEnd = 240;
+        return true;
+    }
+    if (name == "vortex") {
+        Node* em = g.createNode("circle", 0, 0, "emitter");
+        setF(em, "rad", 1.2f); setF(em, "divs", 32);
+        Node* pop = g.createNode("popsolver", 0, 80, "vortex");
+        setF(pop, "rate", 6000); setF(pop, "life", 4.5f); setF(pop, "lifevar", 0.4f);
+        setF(pop, "speedn", 0.6f); setF(pop, "velvar", 0.25f);
+        setV(pop, "gravity", Vec3(0, 1.3f, 0)); setF(pop, "drag", 1.2f);
+        setF(pop, "turb", 1.0f); setF(pop, "turbfreq", 0.55f); setF(pop, "turbspeed", 0.4f);
+        setF(pop, "ground", 0);
+        setF(pop, "pscale", 0.03f); setF(pop, "pscaleend", 0.25f);
+        setV(pop, "color", Vec3(0.35f, 0.85f, 1.3f)); setV(pop, "color2", Vec3(0.75f, 0.15f, 0.9f));
+        setS(pop, "snippet",
+             "// Spin around the Y axis and pull gently toward it\n"
+             "vector axis = set(0, 1, 0);\n"
+             "vector r = set(@P.x, 0, @P.z);\n"
+             "@v += cross(axis, r) * @TimeInc * 3;\n"
+             "@v -= r * @TimeInc * 4.5;\n");
+        g.connect(em, pop, 0);
+        g.setDisplayNode(pop);
+        g.frameEnd = 240;
         return true;
     }
     return false;

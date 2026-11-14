@@ -1,0 +1,45 @@
+{
+  "display": "vortex",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "emitter",
+      "parms": {
+        "divs": 32,
+        "rad": 1.20000005
+      },
+      "type": "circle",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["emitter"],
+      "name": "vortex",
+      "parms": {
+        "color": [0.349999994, 0.850000024, 1.29999995],
+        "color2": [0.75, 0.150000006, 0.899999976],
+        "drag": 1.20000005,
+        "gravity": [0, 1.29999995, 0],
+        "ground": 0,
+        "life": 4.5,
+        "lifevar": 0.400000006,
+        "pscaleend": 0.25,
+        "rate": 6000,
+        "snippet": "// Spin around the Y axis and pull gently toward it\nvector axis = set(0, 1, 0);\nvector r = set(@P.x, 0, @P.z);\n@v += cross(axis, r) * @TimeInc * 3;\n@v -= r * @TimeInc * 4.5;\n",
+        "speedn": 0.600000024,
+        "turb": 1,
+        "turbfreq": 0.550000012,
+        "turbspeed": 0.400000006,
+        "velvar": 0.25
+      },
+      "type": "popsolver",
+      "x": 0,
+      "y": 92
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}

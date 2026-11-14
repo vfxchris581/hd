@@ -628,7 +628,8 @@ void App::drawHelpWindows() {
             ImGui::TextWrapped("VEX-lite is HD's snippet language, used by Attribute Wrangle, expression groups (Blast / PolyExtrude) and parameter expressions.");
             ImGui::SeparatorText("Attributes");
             ImGui::TextWrapped("@P @N @Cd @v @up @uv @scale are vectors; other @name are floats. Force a type with v@name or f@name. "
-                               "Writing to an attribute that doesn't exist creates it. Read-only: @ptnum @numpt @primnum @numprim @Time @Frame.");
+                               "Writing to an attribute that doesn't exist creates it. Read-only: @ptnum @numpt @primnum @numprim @Time @Frame. "
+                               "In a POP wrangle, particles also have @v @age @life @id @pscale, and @TimeInc is the substep length.");
             ImGui::SeparatorText("Syntax");
             if (monoFont) ImGui::PushFont(monoFont);
             ImGui::TextUnformatted(

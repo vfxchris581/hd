@@ -24,6 +24,7 @@ add_library(hd_core STATIC
   src/core/Nodes.cpp
   src/core/Noise.cpp
   src/core/Ops.cpp
+  src/core/Sim.cpp
 )
 target_include_directories(hd_core PUBLIC src)
 if(MSVC)

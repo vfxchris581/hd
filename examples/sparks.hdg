@@ -1,0 +1,96 @@
+{
+  "display": "OUT",
+  "format": "hd-graph",
+  "fps": 24,
+  "frame": 1,
+  "nodes": [
+    {
+      "inputs": [],
+      "name": "emitter",
+      "parms": {
+        "cols": 12,
+        "rad": [0.119999997, 0.119999997, 0.119999997],
+        "rows": 8,
+        "t": [0, 1.60000002, 0],
+        "t.expr": ["sin($T * 2.2) * 2", "", "cos($T * 1.6) * 1.5"]
+      },
+      "type": "sphere",
+      "x": 0,
+      "y": 0
+    },
+    {
+      "inputs": ["emitter"],
+      "name": "sparks",
+      "parms": {
+        "bounce": 0.449999988,
+        "color": [1.60000002, 1.25, 0.550000012],
+        "color2": [0.75, 0.0799999982, 0.0199999996],
+        "drag": 0.25,
+        "friction": 0.25,
+        "life": 1.79999995,
+        "lifevar": 0.600000024,
+        "pscale": 0.0219999999,
+        "pscaleend": 0.300000012,
+        "rate": 2500,
+        "speedn": 3.20000005,
+        "vel": [0, 2.5, 0],
+        "velvar": 1.39999998
+      },
+      "type": "popsolver",
+      "x": 0,
+      "y": 92
+    },
+    {
+      "inputs": ["sparks"],
+      "name": "streaks",
+      "parms": {
+        "keeppts": 1,
+        "length": 0.0350000001
+      },
+      "type": "trail",
+      "x": 0,
+      "y": 184
+    },
+    {
+      "inputs": [],
+      "name": "ground",
+      "parms": {
+        "cols": 2,
+        "rows": 2,
+        "sizex": 12,
+        "sizey": 12
+      },
+      "type": "grid",
+      "x": 322,
+      "y": 92
+    },
+    {
+      "inputs": ["ground"],
+      "name": "floor_color",
+      "parms": {
+        "color": [0.159999996, 0.170000002, 0.189999998]
+      },
+      "type": "color",
+      "x": 322,
+      "y": 184
+    },
+    {
+      "inputs": ["floor_color", "streaks", "emitter", null, null, null, null, null],
+      "name": "merge1",
+      "parms": {},
+      "type": "merge",
+      "x": 154,
+      "y": 287.5
+    },
+    {
+      "inputs": ["merge1"],
+      "name": "OUT",
+      "parms": {},
+      "type": "null",
+      "x": 154,
+      "y": 368
+    }
+  ],
+  "range": [1, 240],
+  "version": 1
+}

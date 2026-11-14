@@ -237,6 +237,17 @@ void App::drawTimeline() {
     float rightW = 470;
     ImGui::SetNextItemWidth(std::max(120.f, ImGui::GetContentRegionAvail().x - rightW));
     if (ImGui::SliderInt("##frame", &f, graph.frameStart, std::max(graph.frameStart + 1, graph.frameEnd), "Frame %d")) graph.frame = float(f);
+    {
+        // blue bar under the slider: frames cached by simulation nodes
+        ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+        float span = float(std::max(1, graph.frameEnd - graph.frameStart));
+        for (auto& n : graph.nodes()) {
+            if (n->simCacheEnd < n->simCacheStart) continue;
+            float t0 = std::clamp(float(n->simCacheStart - graph.frameStart) / span, 0.f, 1.f);
+            float t1 = std::clamp(float(n->simCacheEnd - graph.frameStart) / span, 0.f, 1.f);
+            ImGui::GetWindowDrawList()->AddRectFilled(ImVec2(a.x + (b.x - a.x) * t0, b.y - 3), ImVec2(a.x + (b.x - a.x) * t1 + 2, b.y), IM_COL32(70, 150, 255, 220));
+        }
+    }
     ImGui::SameLine();
     ImGui::SetNextItemWidth(55);
     if (ImGui::DragInt("##start", &graph.frameStart, 1, -100000, graph.frameEnd - 1)) markDirty();
