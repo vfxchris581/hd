@@ -102,6 +102,7 @@ if(HD_BUILD_APP)
 
   add_library(hd_app STATIC
     src/app/App.cpp
+    src/app/Assets.cpp
     src/app/NetworkEditor.cpp
     src/app/ParmPane.cpp
     src/app/Menus.cpp

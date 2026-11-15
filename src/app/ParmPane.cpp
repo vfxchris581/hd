@@ -33,10 +33,10 @@ void App::drawParameters() {
     ImGui::SetNextItemWidth(ImGui::GetContentRegionAvail().x - 150);
     if (ImGui::InputText("##nodename", &name, ImGuiInputTextFlags_EnterReturnsTrue)) {
         checkpoint();
-        if (!graph.rename(n, name)) status("Invalid or duplicate name: " + name, true);
+        if (!net().rename(n, name)) status("Invalid or duplicate name: " + name, true);
     }
     ImGui::SameLine();
-    bool isDisplay = graph.displayNode() == n;
+    bool isDisplay = net().displayNode() == n;
     ImGui::PushStyleColor(ImGuiCol_Button, isDisplay ? ImVec4(0.25f, 0.5f, 1.f, 1) : ImGui::GetStyle().Colors[ImGuiCol_Button]);
     if (ImGui::Button("Display")) { checkpoint(); setDisplay(n); }
     ImGui::PopStyleColor();
@@ -55,6 +55,13 @@ void App::drawParameters() {
         ImGui::PopStyleColor();
     } else if (!n->warning().empty()) {
         ImGui::TextColored(ImVec4(1, 0.75f, 0.35f, 1), "Warning: %s", n->warning().c_str());
+    }
+    if (n->subnet()) {
+        if (ImGui::Button("Dive In")) { diveInto(n); ImGui::End(); return; }
+        ImGui::SameLine();
+        if (ImGui::Button("Save As Asset")) saveAsset(n);
+        ImGui::SameLine();
+        ImGui::TextDisabled("%zu nodes inside", n->subnet()->nodes().size());
     }
     ImGui::Separator();
 

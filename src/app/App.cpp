@@ -24,6 +24,7 @@ bool App::init(GLFWwindow* window, const std::string& startupFile) {
     }
     fileDir_ = fs::current_path().string();
     loadPrefs();
+    refreshAssets();
     if (!startupFile.empty() && loadScene(startupFile)) {
         // loaded
     } else {
@@ -80,11 +81,59 @@ void App::select(Node* n, bool additive) {
     }
 }
 
-App::Snapshot App::snapshot() const {
+Graph& App::net() {
+    Graph* g = &graph;
+    size_t i = 0;
+    for (; i < netPath_.size(); ++i) {
+        Node* s = g->findNode(netPath_[i]);
+        if (!s || !s->subnet()) break;
+        g = s->subnet();
+    }
+    if (i < netPath_.size()) { // the subnet we were in no longer exists (undo, delete)
+        netPath_.resize(i);
+        selection.clear();
+        currentId = -1;
+        network.requestFrameAll();
+    }
+    return *g;
+}
+
+void App::diveInto(Node* sn) {
+    if (!sn || !sn->subnet()) return;
+    netPath_.push_back(sn->name());
+    clearSelection();
+    if (Node* d = net().displayNode()) select(d);
+    network.requestFrameAll();
+}
+
+void App::goToLevel(size_t depth) {
+    if (depth >= netPath_.size()) return;
+    std::string child = netPath_[depth];
+    netPath_.resize(depth);
+    clearSelection();
+    if (Node* n = net().findNode(child)) select(n);
+    network.requestFrameAll();
+}
+
+void App::collapseSelected() {
+    std::vector<Node*> sel;
+    for (int id : selection)
+        if (Node* n = net().findNode(id)) sel.push_back(n);
+    if (sel.empty()) { status("Select the nodes to collapse first", true); return; }
+    checkpoint();
+    std::string err;
+    Node* sn = net().collapseToSubnet(sel, &err);
+    if (!sn) { status("Cannot collapse: " + err, true); return; }
+    select(sn);
+    status("Collapsed " + std::to_string(sel.size()) + " nodes into " + sn->name() + " (double-click it to dive in)");
+}
+
+App::Snapshot App::snapshot() {
     Snapshot s;
+    s.path = netPath_;
     s.graph = graph.toJson().dump(0);
     for (int id : selection)
-        if (Node* n = graph.findNode(id)) s.selected.push_back(n->name());
+        if (Node* n = net().findNode(id)) s.selected.push_back(n->name());
     if (Node* c = current()) s.current = c->name();
     return s;
 }
@@ -92,12 +141,13 @@ App::Snapshot App::snapshot() const {
 void App::restore(const Snapshot& s) {
     float frame = graph.frame;
     graph.fromJson(Json::parse(s.graph));
+    netPath_ = s.path;
     graph.frame = frame;
     selection.clear();
     currentId = -1;
     for (auto& name : s.selected)
-        if (Node* n = graph.findNode(name)) selection.insert(n->id());
-    if (Node* c = graph.findNode(s.current)) currentId = c->id();
+        if (Node* n = net().findNode(name)) selection.insert(n->id());
+    if (Node* c = net().findNode(s.current)) currentId = c->id();
 }
 
 void App::checkpoint() {
@@ -129,13 +179,14 @@ void App::redo() {
 
 // ---------------------------------------------------------------- actions
 Node* App::createNode(const std::string& type, float x, float y, int connectFrom) {
-    Node* n = graph.createNode(type, x, y);
+    if (type.rfind("asset:", 0) == 0) return createAsset(type.substr(6), x, y, connectFrom);
+    Node* n = net().createNode(type, x, y);
     if (!n) return nullptr;
-    if (Node* src = graph.findNode(connectFrom))
-        if (!n->inputs.empty()) graph.connect(src, n, 0);
+    if (Node* src = net().findNode(connectFrom))
+        if (!n->inputs.empty()) net().connect(src, n, 0);
     // Houdini behaviour: new nodes become the displayed node when they're downstream
     // of the display node, or when nothing is displayed.
-    if (!graph.displayNode() || (connectFrom >= 0 && graph.displayNode() && graph.displayNode()->id() == connectFrom))
+    if (!net().displayNode() || (connectFrom >= 0 && net().displayNode() && net().displayNode()->id() == connectFrom))
         setDisplay(n);
     select(n);
     return n;
@@ -145,20 +196,20 @@ void App::deleteSelected() {
     if (selection.empty()) return;
     checkpoint();
     for (int id : std::vector<int>(selection.begin(), selection.end())) {
-        Node* n = graph.findNode(id);
+        Node* n = net().findNode(id);
         if (!n) continue;
         // reconnect around a single-input node (like Houdini's delete)
         Node* upstream = n->inputs.empty() ? nullptr : n->inputs[0];
-        auto outs = graph.outputsOf(n);
-        bool wasDisplay = graph.displayNode() == n;
-        graph.removeNode(n);
-        if (upstream && graph.findNode(upstream->id())) {
-            for (auto& [dst, idx] : outs) graph.connect(upstream, dst, idx);
-            if (wasDisplay) graph.setDisplayNode(upstream);
+        auto outs = net().outputsOf(n);
+        bool wasDisplay = net().displayNode() == n;
+        net().removeNode(n);
+        if (upstream && net().findNode(upstream->id())) {
+            for (auto& [dst, idx] : outs) net().connect(upstream, dst, idx);
+            if (wasDisplay) net().setDisplayNode(upstream);
         }
     }
     clearSelection();
-    if (!graph.displayNode() && !graph.nodes().empty()) graph.setDisplayNode(graph.nodes().back().get());
+    if (!net().displayNode() && !net().nodes().empty()) net().setDisplayNode(net().nodes().back().get());
 }
 
 void App::duplicateSelected() {
@@ -166,9 +217,9 @@ void App::duplicateSelected() {
     checkpoint();
     std::set<int> newSel;
     for (int id : selection) {
-        Node* n = graph.findNode(id);
+        Node* n = net().findNode(id);
         if (!n) continue;
-        Node* c = graph.createNode(n->type().name, n->x + 40, n->y + 40, n->name());
+        Node* c = net().createNode(n->type().name, n->x + 40, n->y + 40, n->name());
         for (size_t i = 0; i < n->parms().size(); ++i) {
             Parm& d = c->parms()[i];
             const Parm& s = n->parms()[i];
@@ -177,7 +228,8 @@ void App::duplicateSelected() {
             d.str = s.str;
         }
         for (size_t i = 0; i < n->inputs.size(); ++i)
-            if (n->inputs[i]) graph.connect(n->inputs[i], c, int(i));
+            if (n->inputs[i]) net().connect(n->inputs[i], c, int(i));
+        if (n->subnet() && c->subnet()) c->subnet()->fromJson(n->subnet()->toJson());
         newSel.insert(c->id());
     }
     selection = newSel;
@@ -185,16 +237,17 @@ void App::duplicateSelected() {
 }
 
 void App::setDisplay(Node* n) {
-    graph.setDisplayNode(n);
+    net().setDisplayNode(n);
 }
 
 void App::newScene(bool withDemo) {
+    netPath_.clear();
     graph.clear();
     if (withDemo) buildDemoScene(graph, "terrain");
     undo_.clear();
     redo_.clear();
     clearSelection();
-    if (Node* d = graph.displayNode()) select(d);
+    if (Node* d = net().displayNode()) select(d);
     currentFile_.clear();
     dirty_ = false;
     frameOnNextCook_ = true;
@@ -208,11 +261,12 @@ bool App::loadScene(const std::string& path) {
         status("Open failed: " + err, true);
         return false;
     }
+    netPath_.clear();
     graph.fromJson(tmp.toJson());
     undo_.clear();
     redo_.clear();
     clearSelection();
-    if (Node* d = graph.displayNode()) select(d);
+    if (Node* d = net().displayNode()) select(d);
     currentFile_ = path;
     dirty_ = false;
     frameOnNextCook_ = true;
@@ -254,7 +308,7 @@ void App::status(const std::string& msg, bool error) {
 }
 
 void App::frameGeometry() {
-    Node* d = graph.displayNode();
+    Node* d = net().displayNode();
     if (!d || d->geometry().empty()) { camera.home(); return; }
     Vec3 mn, mx;
     d->geometry().bounds(mn, mx);
@@ -264,12 +318,24 @@ void App::frameGeometry() {
 }
 
 void App::cookDisplay() {
-    Node* d = graph.displayNode();
+    // cook down the path we have dived into, so each level's Subnet Inputs and clock are up to date
+    {
+        Graph* g = &graph;
+        for (auto& name : netPath_) {
+            Node* sn = g->findNode(name);
+            if (!sn || !sn->subnet()) break;
+            g->cook(sn);
+            Graph* sub = sn->subnet();
+            sub->frame = graph.frame; sub->fps = graph.fps; sub->frameStart = graph.frameStart; sub->frameEnd = graph.frameEnd;
+            g = sub;
+        }
+    }
+    Node* d = net().displayNode();
     if (!d) { renderer.clearGeometry(); return; }
-    graph.cook(d);
+    net().cook(d);
     renderer.setGeometry(d->geometry(), d->cookStamp());
     // also cook the selected node so its info (errors, counts) is fresh in the UI
-    if (Node* c = current()) graph.cook(c);
+    if (Node* c = current()) net().cook(c);
     if (frameOnNextCook_) {
         frameOnNextCook_ = false;
         frameGeometry();
@@ -353,6 +419,7 @@ void App::frame() {
     if (showRenderView) drawRenderView();
     drawDisplayOptions();
     drawRenderSettings();
+    drawAssetManager();
     drawFileDialog();
     drawHelpWindows();
     if (showImGuiDemo) ImGui::ShowDemoWindow(&showImGuiDemo);
@@ -409,7 +476,7 @@ void App::openFileDialog(FileDialogMode mode) {
         std::string stem = currentFile_.empty() ? "render" : fs::path(currentFile_).stem().string();
         std::snprintf(fileName_, sizeof fileName_, "%s.png", stem.c_str());
     } else if (mode == FileDialogMode::ExportObj) {
-        std::snprintf(fileName_, sizeof fileName_, "%s.obj", graph.displayNode() ? graph.displayNode()->name().c_str() : "export");
+        std::snprintf(fileName_, sizeof fileName_, "%s.obj", net().displayNode() ? net().displayNode()->name().c_str() : "export");
     }
     if (fileDir_.empty() || !fs::exists(fileDir_)) fileDir_ = fs::current_path().string();
 }
@@ -421,7 +488,7 @@ void App::drawFileDialog() {
     }
     ImGui::SetNextWindowSize(ImVec2(640, 460), ImGuiCond_Appearing);
     if (!ImGui::BeginPopupModal("File Browser", nullptr)) return;
-    const char* titles[] = {"", "Open Scene", "Save Scene As", "Import OBJ", "Export Geometry (.obj / .ply)", "Choose File", "Save Rendered Image", "Render Sequence To (frame numbers are added)", "Merge Scene"};
+    const char* titles[] = {"", "Open Scene", "Save Scene As", "Import OBJ", "Export Geometry (.obj / .ply)", "Choose File", "Save Rendered Image", "Render Sequence To (frame numbers are added)", "Merge Scene", "Install Asset"};
     ImGui::TextUnformatted(titles[int(fileMode_)]);
     ImGui::Separator();
     bool saving = fileMode_ == FileDialogMode::SaveAs || fileMode_ == FileDialogMode::ExportObj || fileMode_ == FileDialogMode::SaveImage || fileMode_ == FileDialogMode::SaveSequence;
@@ -429,6 +496,7 @@ void App::drawFileDialog() {
     if (fileMode_ == FileDialogMode::Open || fileMode_ == FileDialogMode::SaveAs || fileMode_ == FileDialogMode::MergeScene) exts = {".hdg"};
     else if (fileMode_ == FileDialogMode::ExportObj) exts = {".obj", ".ply"};
     else if (fileMode_ == FileDialogMode::SaveImage || fileMode_ == FileDialogMode::SaveSequence) exts = {".png"};
+    else if (fileMode_ == FileDialogMode::InstallAsset) exts = {".hda"};
     else exts = {".obj"};
 
     // path bar
@@ -508,7 +576,7 @@ void App::drawFileDialog() {
         case FileDialogMode::SaveAs: saveScene(chosen); break;
         case FileDialogMode::ImportObj: openPath(chosen); break;
         case FileDialogMode::ExportObj: {
-            Node* d = graph.displayNode();
+            Node* d = net().displayNode();
             bool ok = false;
             if (d) {
                 std::string ext = fs::path(chosen).extension().string();
@@ -519,7 +587,7 @@ void App::drawFileDialog() {
         }
         case FileDialogMode::ChooseFileParm: {
             size_t slash = fileParmTarget.find('/');
-            Node* n = graph.findNode(fileParmTarget.substr(0, slash));
+            Node* n = net().findNode(fileParmTarget.substr(0, slash));
             if (n && slash != std::string::npos) {
                 if (Parm* p = n->parm(fileParmTarget.substr(slash + 1))) {
                     checkpoint();
@@ -531,6 +599,7 @@ void App::drawFileDialog() {
             break;
         }
         case FileDialogMode::MergeScene: mergeScene(chosen); break;
+        case FileDialogMode::InstallAsset: installAsset(chosen); break;
         case FileDialogMode::SaveImage: {
             bool ok = writePng(chosen, renderImg_, renderW_, renderH_, &err);
             status(ok ? "Saved " + chosen : "Save failed: " + err, !ok);
@@ -578,6 +647,9 @@ void App::drawHelpWindows() {
                 row("Network: MMB / Alt+LMB drag", "Pan");
                 row("Network: wheel", "Zoom");
                 row("Network: F2 / double-click", "Rename node");
+                row("Network: Shift+C", "Collapse selected nodes into a subnet");
+                row("Network: I / double-click subnet", "Dive into a subnet");
+                row("Network: U", "Go up one level");
                 row("Viewport: LMB / Alt+LMB", "Tumble");
                 row("Viewport: MMB / Alt+MMB", "Pan");
                 row("Viewport: RMB / wheel", "Dolly");

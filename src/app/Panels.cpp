@@ -84,7 +84,7 @@ void App::drawViewport() {
 
     // overlays
     ImDrawList* dl = ImGui::GetWindowDrawList();
-    Node* d = graph.displayNode();
+    Node* d = net().displayNode();
     ImVec2 tp(imgPos.x + 10, imgPos.y + 8);
     if (d) {
         const Geometry& g = d->geometry();
@@ -148,9 +148,9 @@ void App::drawViewport() {
 void App::drawSpreadsheet() {
     if (!ImGui::Begin("Geometry Spreadsheet", &showSpreadsheet)) { ImGui::End(); return; }
     Node* n = current();
-    if (!n) n = graph.displayNode();
+    if (!n) n = net().displayNode();
     if (!n) { ImGui::TextDisabled("No node selected."); ImGui::End(); return; }
-    graph.cook(n);
+    net().cook(n);
     const Geometry& g = n->geometry();
     ImGui::Text("Node: %s", n->name().c_str());
     ImGui::SameLine();
@@ -247,7 +247,7 @@ void App::drawTimeline() {
         // blue bar under the slider: frames cached by simulation nodes
         ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
         float span = float(std::max(1, graph.frameEnd - graph.frameStart));
-        for (auto& n : graph.nodes()) {
+        for (auto& n : net().nodes()) {
             if (n->simCacheEnd < n->simCacheStart) continue;
             float t0 = std::clamp(float(n->simCacheStart - graph.frameStart) / span, 0.f, 1.f);
             float t1 = std::clamp(float(n->simCacheEnd - graph.frameStart) / span, 0.f, 1.f);

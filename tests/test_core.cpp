@@ -375,6 +375,143 @@ TEST(copy_paste_and_merge_nodes) {
     for (Node* n : made) { g.cook(n); CHECK(n->error().empty()); }
 }
 
+TEST(subnetworks) {
+    Graph g;
+    Node* box = g.createNode("box");
+    Node* sn = g.createNode("subnet");
+    CHECK(sn && sn->subnet() && sn->subnet()->parent() == &g && sn->subnet()->owner() == sn);
+    if (!sn || !sn->subnet()) return;
+    g.connect(box, sn, 0);
+    g.cook(sn);
+    CHECK(sn->error().empty() && sn->geometry().numPoints() == 8); // default: pass-through
+    // edit inside: add a transform between Input and Output
+    Graph* sub = sn->subnet();
+    Node* in = sub->findNode("input1");
+    Node* out = sub->outputNode();
+    CHECK(in && out && out->type().name == "output");
+    Node* xf = sub->createNode("xform");
+    sub->connect(in, xf, 0);
+    sub->connect(xf, out, 0);
+    xf->parm("t")->val[1] = 5;
+    g.cook(sn); // the outer node notices the inner change
+    Vec3 mn, mx;
+    sn->geometry().bounds(mn, mx);
+    NEAR(mn.y, 4.5f);
+    // a change outside reaches the inside
+    box->parm("size")->val[0] = 4; box->touch();
+    g.cook(sn);
+    sn->geometry().bounds(mn, mx);
+    NEAR(mx.x, 2);
+    // nothing changed -> nothing recooks
+    uint64_t c0 = g.totalCooks() + sub->totalCooks();
+    g.cook(sn);
+    CHECK(g.totalCooks() + sub->totalCooks() == c0);
+    // animation inside makes the subnet time dependent
+    CHECK(!sn->isTimeDependent());
+    xf->parm("t")->expr[0] = "$F";
+    xf->touch();
+    CHECK(sn->isTimeDependent());
+    g.frame = 7; g.cook(sn);
+    sn->geometry().bounds(mn, mx);
+    NEAR(mn.x, 5); // 7 - 2
+    // unconnected input and error reporting
+    Node* in2 = sub->createNode("input");
+    in2->parm("index")->val[0] = 3;
+    Node* m = sub->createNode("merge");
+    sub->connect(xf, m, 0); sub->connect(in2, m, 1); sub->connect(m, out, 0);
+    g.cook(sn);
+    CHECK(sn->error().empty() && sn->geometry().numPoints() == 8);
+    Node* bad = sub->createNode("attribwrangle");
+    bad->parm("snippet")->str = "@P.y = ;";
+    sub->connect(m, bad, 0); sub->connect(bad, out, 0);
+    g.cook(sn);
+    CHECK(!sn->error().empty());
+    sub->connect(m, out, 0);
+    g.cook(sn);
+    CHECK(sn->error().empty());
+    // save / load keeps the contents
+    Graph g2;
+    CHECK(g2.fromJson(Json::parse(g.toJson().dump())));
+    Node* sn2 = g2.findNode(sn->name());
+    CHECK(sn2 && sn2->subnet() && sn2->subnet()->nodes().size() == sub->nodes().size());
+    if (sn2 && sn2->subnet()) {
+        CHECK(sn2->subnet()->parent() == &g2 && sn2->subnet()->owner() == sn2);
+        g2.frame = 7; g2.cook(sn2);
+        Vec3 a, b; sn2->geometry().bounds(a, b);
+        NEAR(a.x, 5); NEAR(a.y, 4.5f);
+        CHECK(g2.toJson().dump() == g.toJson().dump());
+    }
+    // nested subnets
+    Node* inner = sub->createNode("subnet");
+    sub->connect(m, inner, 0); sub->connect(inner, out, 0);
+    Node* pk = inner->subnet()->createNode("xform");
+    pk->parm("scale")->val[0] = 2;
+    inner->subnet()->connect(inner->subnet()->findNode("input1"), pk, 0);
+    inner->subnet()->connect(pk, inner->subnet()->outputNode(), 0);
+    g.frame = 1; g.cook(sn);
+    sn->geometry().bounds(mn, mx);
+    CHECK(sn->error().empty());
+    NEAR(mx.x - mn.x, 8); // 4 wide, doubled
+    // a simulation inside a subnet sees an animated outer emitter frame by frame
+    Graph g3;
+    Node* e = g3.createNode("sphere");
+    for (int c = 0; c < 3; ++c) e->parm("rad")->val[c] = 0.01f;
+    e->parm("t")->expr[0] = "$F";
+    Node* s3 = g3.createNode("subnet");
+    g3.connect(e, s3, 0);
+    Graph* sub3 = s3->subnet();
+    Node* pop = sub3->createNode("popsolver");
+    for (const char* z : {"speedn", "velvar", "drag"}) pop->parm(z)->val[0] = 0;
+    pop->parm("gravity")->val[1] = 0; pop->parm("life")->val[0] = 100; pop->parm("rate")->val[0] = 24;
+    sub3->connect(sub3->findNode("input1"), pop, 0);
+    sub3->connect(pop, sub3->outputNode(), 0);
+    g3.frame = 30; g3.cook(s3);
+    s3->geometry().bounds(mn, mx);
+    CHECK(s3->error().empty() && s3->geometry().numPoints() == 30);
+    CHECK(mn.x < 1.1f && mx.x > 29.9f);
+    g3.frame = 31; g3.cook(s3); // continues from the cache instead of restarting
+    CHECK(s3->geometry().numPoints() == 31 && pop->simCacheStart == 1);
+}
+
+TEST(collapse_to_subnet) {
+    Graph g;
+    buildDemoScene(g, "terrain");
+    Node* disp = g.displayNode();
+    g.cook(disp);
+    const size_t pts = disp->geometry().numPoints(), prims = disp->geometry().numPrims();
+    // rock branch: sphere -> mountain -> color, feeding copy_rocks
+    std::vector<Node*> sel = {g.findNode("rock"), g.findNode("rock_noise"), g.findNode("rock_color")};
+    std::string err;
+    Node* sn = g.collapseToSubnet(sel, &err);
+    CHECK(sn != nullptr);
+    if (!sn) { std::printf("  %s\n", err.c_str()); return; }
+    CHECK(!g.findNode("rock") && sn->subnet()->findNode("rock") && sn->subnet()->nodes().size() == 4);
+    CHECK(g.findNode("copy_rocks")->inputs[0] == sn);
+    g.cook(g.displayNode());
+    CHECK(g.displayNode()->error().empty());
+    CHECK(g.displayNode()->geometry().numPoints() == pts && g.displayNode()->geometry().numPrims() == prims);
+    // a middle section with an outside input: mountain1 + height_ramp (reads ground, feeds scatter and merge)
+    sel = {g.findNode("mountain1"), g.findNode("height_ramp")};
+    Node* sn2 = g.collapseToSubnet(sel, &err);
+    CHECK(sn2 != nullptr);
+    if (sn2) {
+        CHECK(sn2->inputs[0] == g.findNode("ground"));
+        CHECK(g.findNode("scatter1")->inputs[0] == sn2 && g.findNode("merge1")->inputs[0] == sn2);
+        g.cook(g.displayNode());
+        CHECK(g.displayNode()->error().empty() && g.displayNode()->geometry().numPoints() == pts);
+    }
+    // two different outputs -> refused, graph untouched
+    size_t count = g.nodes().size();
+    sel = {g.findNode("ground"), g.findNode("scatter1")};
+    CHECK(g.collapseToSubnet(sel, &err) == nullptr && !err.empty());
+    CHECK(g.nodes().size() == count);
+    // collapsing the displayed node keeps the display on the subnet
+    sel = {g.findNode("merge1"), g.findNode("OUT")};
+    Node* sn3 = g.collapseToSubnet(sel, &err);
+    CHECK(sn3 && g.displayNode() == sn3);
+    if (sn3) { g.cook(sn3); CHECK(sn3->error().empty() && sn3->geometry().numPoints() == pts); }
+}
+
 TEST(obj_roundtrip) {
     Graph g;
     Node* s = g.createNode("sphere");
@@ -399,6 +536,7 @@ TEST(all_nodes_cook_on_defaults) {
         g.connect(src, src2, 0);
         Node* n = g.createNode(t.name);
         CHECK(n != nullptr);
+        if (t.name == "input") continue; // only meaningful inside a subnet (covered by the subnet tests)
         if (t.maxInputs >= 1) g.connect(t.name == "trail" ? g.createNode("popsolver") : src, n, 0);
         if (t.maxInputs >= 2) g.connect(src2, n, 1);
         g.cook(n);

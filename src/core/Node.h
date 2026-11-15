@@ -61,6 +61,7 @@ public:
     void error(const std::string& m);
     void warning(const std::string& m);
     bool failed() const { return failed_; }
+    Graph& graph() { return graph_; }
     // Solvers evaluate parameters at the frame being simulated rather than the current one.
     void setEvalFrame(float f) { evalFrame_ = f; hasEvalFrame_ = true; }
     void clearEvalFrame() { hasEvalFrame_ = false; }
@@ -102,6 +103,9 @@ const NodeType* findNodeType(const std::string& name);
 class Node {
 public:
     Node(int id, const NodeType* type, std::string name);
+    ~Node();
+    // Subnetwork nodes own a child graph (nullptr for every other node type).
+    Graph* subnet() const { return sub_.get(); }
 
     int id() const { return id_; }
     const NodeType& type() const { return *type_; }
@@ -152,6 +156,11 @@ private:
     std::vector<uint64_t> cookedInputStamps_;
     bool cooking_ = false;
     std::shared_ptr<void> state_;
+    std::unique_ptr<Graph> sub_;
+    uint64_t cookedSubSig_ = 0;
+    // for Subnet Input nodes: what the outer input looked like last time
+    uint64_t extSig_ = 0;
+    bool dynamicTimeDep_ = false;
 };
 
 template <class T> T& CookContext::state() {
@@ -194,6 +203,19 @@ public:
     uint64_t upstreamSignature(const Node* n) const;
     bool upstreamTimeDependent(const Node* n) const;
 
+    // ---- subnetworks
+    Graph* parent() const { return parent_; }  // graph containing the subnet node that owns this graph
+    Node* owner() const { return owner_; }     // that subnet node
+    Node* outputNode() const;                  // an Output node if there is one, else the display node
+    // Changes when anything inside this graph (parameters, wiring, flags) changes.
+    uint64_t contentSignature() const;
+    // Geometry arriving at input idx of the owning subnet, at the given frame.
+    // Returns false if there is none (err is set if the outer node failed).
+    bool fetchExternal(int idx, float frame, Geometry& out, std::string* err);
+    // Moves the given nodes into a new subnet wired in their place. Returns nullptr and sets err on failure.
+    Node* collapseToSubnet(const std::vector<Node*>& sel, std::string* err = nullptr);
+    static void cookSubnet(CookContext& c);
+
     void clear();
     // Adds nodes described by a "nodes" JSON array (as written by toJson), offset by (dx, dy).
     // Names that clash are made unique; wires are kept between the added nodes only.
@@ -210,6 +232,8 @@ private:
     int nextId_ = 1;
     uint64_t stampCounter_ = 0;
     uint64_t totalCooks_ = 0;
+    Graph* parent_ = nullptr;
+    Node* owner_ = nullptr;
 };
 
 } // namespace hd

@@ -32,6 +32,8 @@ Node::Node(int id, const NodeType* type, std::string name) : id_(id), type_(type
     }
 }
 
+Node::~Node() = default;
+
 Parm* Node::parm(const std::string& name) {
     for (auto& p : parms_) if (p.def->name == name) return &p;
     return nullptr;
@@ -73,7 +75,9 @@ float Node::evalFloat(const Parm& p, int comp, float frame, float fps) const {
 }
 
 bool Node::isTimeDependent() const {
-    if (type_->timeDependent) return true;
+    if (type_->timeDependent || dynamicTimeDep_) return true;
+    if (sub_)
+        for (auto& c : sub_->nodes()) if (c->isTimeDependent()) return true;
     for (auto& p : parms_) {
         for (int c = 0; c < 3; ++c)
             if (!p.expr[c].empty() && (p.expr[c].find("$F") != std::string::npos || p.expr[c].find("$T") != std::string::npos))
@@ -166,6 +170,16 @@ Node* Graph::createNode(const std::string& typeName, float x, float y, const std
     Node* n = nodes_.back().get();
     n->x = x; n->y = y;
     if (!display_) display_ = n;
+    if (t->name == "subnet") {
+        n->sub_ = std::make_unique<Graph>();
+        n->sub_->parent_ = this;
+        n->sub_->owner_ = n;
+        // starts as a pass-through: Input 1 -> Output
+        Node* in = n->sub_->createNode("input", 0, 0);
+        Node* out = n->sub_->createNode("output", 0, 110);
+        n->sub_->connect(in, out, 0);
+        n->sub_->setDisplayNode(out);
+    }
     return n;
 }
 
@@ -245,6 +259,7 @@ uint64_t Graph::upstreamSignature(const Node* root) const {
         mix(uint64_t(n->id()));
         mix(n->parmVersion_);
         mix(n->bypass ? 2 : 1);
+        if (n->sub_) mix(n->sub_->contentSignature());
         for (const Node* in : n->inputs) {
             mix(in ? uint64_t(in->id()) + 17 : 3);
             if (in) stack.push_back(in);
@@ -288,6 +303,7 @@ bool Graph::cook(Node* n) {
     bool timeDep = n->isTimeDependent();
     bool need = n->cookStamp_ == 0 || n->cookedParmVersion_ != n->parmVersion_ || stamps != n->cookedInputStamps_ ||
                 n->cookedBypass_ != n->bypass || (timeDep && n->cookedFrame_ != frame);
+    if (n->sub_ && n->cookedSubSig_ != n->sub_->contentSignature()) need = true;
     if (need) {
         auto t0 = std::chrono::steady_clock::now();
         Geometry out;
@@ -316,6 +332,7 @@ bool Graph::cook(Node* n) {
         n->cookedParmVersion_ = n->parmVersion_;
         n->cookedFrame_ = frame;
         n->cookedBypass_ = n->bypass;
+        if (n->sub_) n->cookedSubSig_ = n->sub_->contentSignature();
         n->cookStamp_ = ++stampCounter_;
         n->cookMs_ = std::chrono::duration<double, std::milli>(std::chrono::steady_clock::now() - t0).count();
         ++totalCooks_;
@@ -323,6 +340,141 @@ bool Graph::cook(Node* n) {
     }
     n->cooking_ = false;
     return any;
+}
+
+// ---------------------------------------------------------------- Subnetworks
+Node* Graph::outputNode() const {
+    for (auto& n : nodes_) if (n->type().name == "output") return n.get();
+    return display_;
+}
+
+uint64_t Graph::contentSignature() const {
+    uint64_t h = 1469598103934665603ull;
+    auto mix = [&h](uint64_t v) { h ^= v + 0x9e3779b97f4a7c15ull + (h << 6) + (h >> 2); h *= 1099511628211ull; };
+    for (auto& n : nodes_) {
+        mix(uint64_t(n->id()));
+        mix(n->parmVersion_);
+        mix(n->bypass ? 2 : 1);
+        for (const Node* in : n->inputs) mix(in ? uint64_t(in->id()) + 17 : 3);
+        if (n->sub_) mix(n->sub_->contentSignature());
+    }
+    mix(display_ ? uint64_t(display_->id()) + 5 : 7);
+    return h;
+}
+
+bool Graph::fetchExternal(int idx, float atFrame, Geometry& out, std::string* err) {
+    if (!parent_ || !owner_ || idx < 0 || idx >= int(owner_->inputs.size())) return false;
+    Node* in = owner_->inputs[size_t(idx)];
+    if (!in) return false;
+    const float saved = parent_->frame;
+    parent_->frame = atFrame;
+    parent_->cook(in);
+    out = in->geo_;
+    bool ok = in->error_.empty();
+    if (!ok && err) *err = "Error in subnet input '" + in->name() + "'";
+    if (atFrame != saved) {
+        parent_->frame = saved;
+        parent_->cook(in); // leave the outer node cooked at the current frame
+    }
+    return ok;
+}
+
+void Graph::cookSubnet(CookContext& c) {
+    Node& node = c.node();
+    Graph& outer = c.graph();
+    Graph* sub = node.sub_.get();
+    if (!sub) return;
+    sub->frame = outer.frame;
+    sub->fps = outer.fps;
+    sub->frameStart = outer.frameStart;
+    sub->frameEnd = outer.frameEnd;
+    // tell the Subnet Input nodes when what they read has changed, and whether it is animated
+    for (auto& ch : sub->nodes_) {
+        if (ch->type().name != "input") continue;
+        int idx = int(std::lround(ch->parm("index")->val[0])) - 1;
+        Node* in = idx >= 0 && idx < int(node.inputs.size()) ? node.inputs[size_t(idx)] : nullptr;
+        uint64_t sig = in ? outer.upstreamSignature(in) : 1;
+        if (ch->extSig_ != sig) { ch->extSig_ = sig; ch->touch(); }
+        ch->dynamicTimeDep_ = in && outer.upstreamTimeDependent(in);
+    }
+    Node* out = sub->outputNode();
+    if (!out) { c.warning("The subnet is empty."); return; }
+    sub->cook(out);
+    if (!out->error_.empty()) { c.error("Inside subnet: " + out->name() + ": " + out->error_); return; }
+    c.out = out->geo_;
+}
+
+Node* Graph::collapseToSubnet(const std::vector<Node*>& sel, std::string* err) {
+    auto fail = [&](const char* m) { if (err) *err = m; return nullptr; };
+    if (sel.empty()) return fail("Select the nodes to collapse first.");
+    auto inSel = [&](const Node* n) { return n && std::find(sel.begin(), sel.end(), n) != sel.end(); };
+    // the one node whose result leaves the selection
+    Node* outNode = nullptr;
+    std::vector<std::pair<Node*, int>> consumers;
+    for (auto& o : nodes_) {
+        if (inSel(o.get())) continue;
+        for (size_t i = 0; i < o->inputs.size(); ++i) {
+            Node* src = o->inputs[i];
+            if (!inSel(src)) continue;
+            if (outNode && outNode != src) return fail("The selection feeds other nodes from more than one node. A subnet has a single output.");
+            outNode = src;
+            consumers.push_back({o.get(), int(i)});
+        }
+    }
+    const bool hadDisplay = inSel(display_);
+    if (hadDisplay) {
+        if (outNode && outNode != display_) return fail("The displayed node and the node feeding the rest of the network differ. A subnet has a single output.");
+        outNode = display_;
+    }
+    if (!outNode) { // nothing downstream: use the lowest node that nothing else in the selection reads
+        for (Node* n : sel) {
+            bool read = false;
+            for (Node* m : sel) for (Node* in : m->inputs) read |= in == n;
+            if (!read && (!outNode || n->y > outNode->y)) outNode = n;
+        }
+        if (!outNode) outNode = sel.back();
+    }
+    // outside nodes feeding the selection become the subnet's inputs
+    std::vector<Node*> ext;
+    for (Node* n : sel)
+        for (Node* src : n->inputs)
+            if (src && !inSel(src) && std::find(ext.begin(), ext.end(), src) == ext.end()) ext.push_back(src);
+    if (ext.size() > 4) return fail("The selection reads from more than 4 outside nodes. A subnet has 4 inputs.");
+
+    float minx = 1e30f, miny = 1e30f, maxy = -1e30f, cx = 0, cy = 0;
+    for (Node* n : sel) { minx = std::min(minx, n->x); miny = std::min(miny, n->y); maxy = std::max(maxy, n->y); cx += n->x; cy += n->y; }
+    cx /= float(sel.size()); cy /= float(sel.size());
+    std::vector<const Node*> csel(sel.begin(), sel.end());
+    Json js = nodesToJson(csel);
+    const std::string outName = outNode->name();
+    struct Wire { std::string node; int input; int ext; };
+    std::vector<Wire> wires;
+    for (Node* n : sel)
+        for (size_t k = 0; k < n->inputs.size(); ++k)
+            for (size_t e = 0; e < ext.size(); ++e)
+                if (n->inputs[k] == ext[e]) wires.push_back({n->name(), int(k), int(e)});
+
+    Node* sn = createNode("subnet", cx, cy);
+    if (!sn) return fail("Subnet node type is missing.");
+    Graph* sub = sn->sub_.get();
+    sub->clear();
+    sub->addNodesFromJson(js, -minx, -miny + 120);
+    for (size_t e = 0; e < ext.size(); ++e) {
+        Node* in = sub->createNode("input", float(e) * 220.f, 0);
+        in->parm("index")->val[0] = float(e + 1);
+        for (auto& w : wires)
+            if (w.ext == int(e)) sub->connect(in, sub->findNode(w.node), w.input);
+    }
+    Node* inner = sub->findNode(outName);
+    Node* o = sub->createNode("output", inner ? inner->x : 0, maxy - miny + 240);
+    sub->connect(inner, o, 0);
+    sub->setDisplayNode(o);
+
+    for (size_t e = 0; e < ext.size(); ++e) connect(ext[e], sn, int(e));
+    for (Node* n : std::vector<Node*>(sel)) removeNode(n);
+    for (auto& [dst, idx] : consumers) connect(sn, dst, idx);
+    if (hadDisplay || !display_) display_ = sn;
+    return sn;
 }
 
 // ---------------------------------------------------------------- Serialization
@@ -387,6 +539,7 @@ Json Graph::toJson() const {
         Json inputs = Json::array();
         for (Node* in : n->inputs) inputs.push(in ? Json(in->name()) : Json());
         jn["inputs"] = inputs;
+        if (n->sub_) jn["subnet"] = n->sub_->toJson();
         nodes.push(jn);
     }
     root["nodes"] = nodes;
@@ -416,6 +569,7 @@ std::vector<Node*> Graph::addNodesFromJson(const Json& nodes, float dx, float dy
             const Json& e = parms.get(d.name + ".expr");
             for (int c = 0; c < 3 && c < int(e.size()); ++c) p.expr[c] = e[size_t(c)].str();
         }
+        if (n->sub_ && jn.get("subnet").isObject()) n->sub_->fromJson(jn.get("subnet"));
         byOldName[jn.get("name").str()] = n;
         created.push_back({n, &jn});
     }

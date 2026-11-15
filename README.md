@@ -9,13 +9,13 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 ## Features
 
 - **Network editor.** Nodes flow top to bottom as in Houdini. Press **Tab** (or right-click) to open a searchable node menu. Drag from an output to an input to connect; drag a wire onto empty space to add a node that's already connected. The **blue flag** sets the display node and the **yellow flag** bypasses a node. Also: box select, duplicate, rename, error badges and per-node cook stats.
-- **34 nodes**:
+- **37 nodes**:
   - Generators: Box, Sphere, Grid, Tube, Torus, Circle, Line, File (OBJ)
   - Modifiers: Transform, Merge, Subdivide (Catmull-Clark), PolyExtrude, Fuse, Facet, Reverse, Blast, PolyWire
   - Deformers: Mountain (fractal noise), Smooth, Peak, Point Jitter
   - Points: Scatter (area weighted), Copy to Points (orients to `N`/`up`, scales by `pscale`/`scale`, transfers `Cd`)
   - Attributes: Attribute Wrangle, Attribute Create, Color, Normal, Material
-  - Utility: Null, Switch
+  - Utility: Null, Switch, Subnetwork, Subnet Input, Output
   - Simulation: POP Solver, Trail, Pyro Solver
   - Volumes: Fog Volume
 - **VEX-lite.** A small snippet language for Attribute Wrangle, expression groups and parameter expressions. It supports `@P`, `@N`, `@Cd`, `v@foo`/`f@foo`, `@ptnum`, `@Time`, `@Frame`, `if`/`for`, vector math, `noise`, `curlnoise`, `rand`, `fit`, `hsvtorgb` and more.
@@ -25,7 +25,9 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 - **Animation.** Right-click any parameter and choose **Add Expression** (e.g. `sin($T*2)`, `$F*1.5`). Nodes that depend on time recook during playback; everything else stays cached.
 - **Groups.** Group fields take `0-10 15 20-40:2`, an expression such as `@P.y > 0`, and `!` to invert.
 - **Viewport.** Smooth-shaded surfaces with wireframe overlay, points (sized by `pscale` for point clouds), normals, point and primitive numbers, a ground grid and an axis gizmo. Rendering uses 4× MSAA.
-- **Menus.** The menu bar follows Houdini's layout: **File** (recent files, Save and Increment, Revert, Merge, Import, Export), **Edit** (cut, copy, paste, preferences), **Render**, **Assets**, **Windows** (show or hide each pane, reset the layout) and **Help**. Entries for things HD doesn't have yet (digital assets, Alembic/FBX/USD, Python shell) are greyed out.
+- **Subnetworks.** Select nodes and press **Shift+C** to collapse them into a single Subnetwork node, wired in their place. Double-click it (or press **I**) to dive in and edit; **U** or the breadcrumb at the top of the Network goes back up. Outside wires arrive through Subnet Input nodes (up to 4) and the Output node is the result. Subnets nest, save with the scene, and can contain simulations.
+- **Assets.** Right-click a subnet and choose **Save As Asset** to store it in your asset folder (`~/.hd_assets`). Assets appear in the Tab menu under **Assets** in every scene, and the **Assets** menu has an Asset Manager and an installer for `.hda` files from someone else. Each asset you add is an independent copy: editing it doesn't change the saved asset or other copies, and assets don't expose parameters on the outside yet.
+- **Menus.** The menu bar follows Houdini's layout: **File** (recent files, Save and Increment, Revert, Merge, Import, Export), **Edit** (cut, copy, paste, preferences), **Render**, **Assets**, **Windows** (show or hide each pane, reset the layout) and **Help**. Entries for things HD doesn't have yet (Alembic/FBX/USD, render nodes, Python shell) are greyed out.
 - **Display Options.** Press **D** in the viewport. The Grid tab sets the ground reference plane (on/off, XZ/XY/YZ, origin, spacing, size, ruler lines, opacity); other tabs cover markers, shading and background colors. These settings are remembered between sessions.
 - **Geometry Spreadsheet.** Shows every point and primitive attribute of the selected node.
 - **Timeline.** Play, step, set the frame range and fps.
@@ -37,6 +39,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 ![Smoke flowing around a collider](docs/screenshot-smoke.png)
 
 ![Particle sparks with trails](docs/screenshot-sparks.png)
+
+![Inside a subnet](docs/screenshot-subnet.png)
 
 ![Molecule example](docs/screenshot-molecule.png)
 
@@ -80,6 +84,8 @@ ctest --test-dir build -C Release          # core engine tests
 | | Pan / zoom | Middle-drag or Alt+drag / mouse wheel |
 | | Delete, duplicate, rename | Del, Ctrl+D, F2 or double-click |
 | | Frame all nodes | H |
+| | Collapse selection into a subnet | Shift+C |
+| | Dive into a subnet / go up | I or double-click / U |
 | Viewport | Tumble / pan / dolly | Left / middle / right drag; wheel zooms |
 | | Frame geometry / home | F / H |
 | | Wireframe overlay | W |
@@ -144,4 +150,4 @@ A node recooks only when its parameters, inputs or bypass state change, or when 
 2. ~~Smoke and fire~~ — done (dense grids). Next for volumes: sparse grids, volume wrangle, convert volumes to and from meshes.
 3. Packed primitives and instancing, plus a GPU path for heavy copies.
 4. ~~Path-traced render view~~ — done. Next for rendering: denoising, textures, area lights, depth of field, compressed image output.
-5. Subnetworks and digital assets, Python scripting, multithreaded cooking.
+5. ~~Subnetworks and assets~~ — done. Next: parameters promoted to the outside of a subnet, linked (locked) assets, Python scripting.

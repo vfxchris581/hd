@@ -39,7 +39,7 @@ struct Hit {
 } // namespace
 
 void NetworkEditor::frameAll(App& app) {
-    const auto& nodes = app.graph.nodes();
+    const auto& nodes = app.net().nodes();
     ImVec2 avail = ImGui::GetContentRegionAvail();
     if (nodes.empty() || avail.x < 10 || avail.y < 10) { offset_ = {avail.x * 0.5f, 60}; zoom_ = 1; return; }
     float x0 = 1e9f, y0 = 1e9f, x1 = -1e9f, y1 = -1e9f;
@@ -59,9 +59,29 @@ void NetworkEditor::draw(App& app) {
     ImGui::PopStyleVar();
     if (!open) { ImGui::End(); return; }
 
-    Graph& graph = app.graph;
+    Graph& graph = app.net();
     ImGuiIO& io = ImGui::GetIO();
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    // breadcrumb: which network level we are in
+    {
+        ImGui::SetCursorPos(ImVec2(6, ImGui::GetCursorPosY() + 3));
+        const auto& path = app.netPath();
+        size_t go = path.size() + 1;
+        if (ImGui::SmallButton("scene")) go = 0;
+        for (size_t i = 0; i < path.size(); ++i) {
+            ImGui::SameLine(0, 4); ImGui::TextDisabled(">"); ImGui::SameLine(0, 4);
+            ImGui::PushID(int(i));
+            if (ImGui::SmallButton(path[i].c_str())) go = i + 1;
+            ImGui::PopID();
+        }
+        if (!path.empty()) { ImGui::SameLine(0, 12); ImGui::TextDisabled("(U = up)"); }
+        if (go < path.size()) { // jumped to an outer level: redraw from there next frame
+            app.goToLevel(go);
+            ImGui::End();
+            return;
+        }
+        ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2);
+    }
     ImVec2 origin = ImGui::GetCursorScreenPos();
     ImVec2 size = ImGui::GetContentRegionAvail();
     if (size.x < 4 || size.y < 4) { ImGui::End(); return; }
@@ -163,7 +183,9 @@ void NetworkEditor::draw(App& app) {
                 if (io.KeyShift || io.KeyCtrl) app.select(h.node, true);
                 else if (!app.selection.count(h.node->id())) app.select(h.node);
                 else app.currentId = h.node->id();
-                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
+                if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left) && h.node->subnet()) {
+                    diveId_ = h.node->id();
+                } else if (ImGui::IsMouseDoubleClicked(ImGuiMouseButton_Left)) {
                     renameId_ = h.node->id();
                     std::snprintf(renameBuf_, sizeof renameBuf_, "%s", h.node->name().c_str());
                     ImGui::OpenPopup("Rename Node");
@@ -262,6 +284,10 @@ void NetworkEditor::draw(App& app) {
             for (auto& n : graph.nodes()) app.selection.insert(n->id());
         }
         if (ImGui::IsKeyPressed(ImGuiKey_H, false) && !io.KeyCtrl) frameAll(app);
+        if (ImGui::IsKeyPressed(ImGuiKey_C, false) && io.KeyShift && !io.KeyCtrl) app.collapseSelected();
+        if ((ImGui::IsKeyPressed(ImGuiKey_I, false) || ImGui::IsKeyPressed(ImGuiKey_Enter, false)) && !io.KeyCtrl)
+            if (Node* c = app.current()) if (c->subnet()) diveId_ = c->id();
+        if (ImGui::IsKeyPressed(ImGuiKey_U, false) && !io.KeyCtrl && !app.netPath().empty()) upRequested_ = true;
         if (ImGui::IsKeyPressed(ImGuiKey_F2, false))
             if (Node* c = app.current()) {
                 renameId_ = c->id();
@@ -346,6 +372,12 @@ void NetworkEditor::draw(App& app) {
                 dl->AddText(font, fs * 0.9f, ImVec2(c.x - fs * 0.15f, c.y - fs * 0.45f), IM_COL32_WHITE, "!");
             }
         }
+        if (n->subnet() && zoom_ > 0.35f) { // stacked-box marker: this node has a network inside
+            ImVec2 c(a.x + (kFlagW + 9) * zoom_, a.y + kNodeH * zoom_ * 0.5f);
+            float q = 3.5f * zoom_;
+            dl->AddRect(ImVec2(c.x - q, c.y - q), ImVec2(c.x + q, c.y + q), IM_COL32(235, 235, 238, 200));
+            dl->AddRect(ImVec2(c.x - q + 2 * zoom_, c.y - q - 2 * zoom_), ImVec2(c.x + q + 2 * zoom_, c.y + q - 2 * zoom_), IM_COL32(235, 235, 238, 120));
+        }
         // ports
         float pr = std::max(2.5f, 4.5f * zoom_);
         for (int i = 0; i < int(n->inputs.size()); ++i) {
@@ -402,6 +434,12 @@ void NetworkEditor::draw(App& app) {
                 std::snprintf(renameBuf_, sizeof renameBuf_, "%s", c->name().c_str());
                 openRename = true;
             }
+            if (c->subnet()) {
+                if (ImGui::MenuItem("Dive In", "I")) diveId_ = c->id();
+                if (ImGui::MenuItem("Save As Asset")) app.saveAsset(c);
+            }
+            if (ImGui::MenuItem("Collapse Into Subnet", "Shift+C")) app.collapseSelected();
+            ImGui::Separator();
             if (ImGui::MenuItem("Duplicate", "Ctrl+D")) app.duplicateSelected();
             if (ImGui::MenuItem("Delete", "Del")) app.deleteSelected();
         }
@@ -425,10 +463,21 @@ void NetworkEditor::draw(App& app) {
     }
     drawNodeMenu(app);
     ImGui::End();
+    // change level last, once nothing in this frame still refers to the old one
+    if (diveId_ >= 0) {
+        Node* n = app.net().findNode(diveId_);
+        diveId_ = -1;
+        drag_ = Drag::None;
+        if (n && n->subnet()) app.diveInto(n);
+    } else if (upRequested_ && !app.netPath().empty()) {
+        app.goToLevel(app.netPath().size() - 1);
+    }
+    upRequested_ = false;
 }
 
 void NetworkEditor::drawNodeMenu(App& app) {
     if (openMenu_) {
+        app.refreshAssets();
         ImGui::OpenPopup("Add Node");
         openMenu_ = false;
         search_[0] = 0;
@@ -446,15 +495,25 @@ void NetworkEditor::drawNodeMenu(App& app) {
     for (const char* cat : cats)
         for (auto& t : nodeTypes())
             if (t.category == cat && (icontains(t.label, search_) || icontains(t.name, search_))) matches.push_back(&t);
-    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) menuHighlight_ = std::min(menuHighlight_ + 1, int(matches.size()) - 1);
+    std::vector<std::string> assetMatches;
+    for (auto& a : app.assets())
+        if (icontains(a, search_)) assetMatches.push_back(a);
+    const int total = int(matches.size() + assetMatches.size());
+    if (ImGui::IsKeyPressed(ImGuiKey_DownArrow)) menuHighlight_ = std::min(menuHighlight_ + 1, total - 1);
     if (ImGui::IsKeyPressed(ImGuiKey_UpArrow)) menuHighlight_ = std::max(menuHighlight_ - 1, 0);
 
     const NodeType* chosen = nullptr;
-    if (enter && !matches.empty()) chosen = matches[size_t(std::clamp(menuHighlight_, 0, int(matches.size()) - 1))];
+    std::string chosenAsset;
+    if (enter && total > 0) {
+        int hi = std::clamp(menuHighlight_, 0, total - 1);
+        if (hi < int(matches.size())) chosen = matches[size_t(hi)];
+        else chosenAsset = assetMatches[size_t(hi) - matches.size()];
+    }
     int ncat = 0;
     { std::string lc; for (auto* t : matches) if (t->category != lc) { lc = t->category; ++ncat; } }
     float rowH = ImGui::GetTextLineHeightWithSpacing();
-    ImGui::BeginChild("##list", ImVec2(0, std::min(440.f, rowH * float(matches.size() + size_t(ncat) * 1.4f + 1.f))), ImGuiChildFlags_None);
+    if (!assetMatches.empty()) ++ncat;
+    ImGui::BeginChild("##list", ImVec2(0, std::min(440.f, rowH * float(size_t(total) + size_t(ncat) * 1.4f + 1.f))), ImGuiChildFlags_None);
     std::string lastCat;
     for (int i = 0; i < int(matches.size()); ++i) {
         const NodeType* t = matches[size_t(i)];
@@ -467,11 +526,22 @@ void NetworkEditor::drawNodeMenu(App& app) {
         if (hi && ImGui::IsKeyPressed(ImGuiKey_DownArrow, true)) ImGui::SetScrollHereY();
         if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", t->description.c_str());
     }
-    if (matches.empty()) ImGui::TextDisabled("No matching nodes");
+    if (!assetMatches.empty()) ImGui::SeparatorText("Assets");
+    for (int i = 0; i < int(assetMatches.size()); ++i) {
+        bool hi = int(matches.size()) + i == menuHighlight_;
+        if (ImGui::Selectable(assetMatches[size_t(i)].c_str(), hi)) chosenAsset = assetMatches[size_t(i)];
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Saved subnet asset");
+    }
+    if (total == 0) ImGui::TextDisabled("No matching nodes");
     ImGui::EndChild();
+    if (!chosenAsset.empty()) {
+        app.checkpoint();
+        app.createNode("asset:" + chosenAsset, menuWorld_.x - kNodeW * 0.5f, menuWorld_.y, menuConnectFrom_);
+        ImGui::CloseCurrentPopup();
+    }
     if (chosen) {
         app.checkpoint();
-        Node* src = app.graph.findNode(menuConnectFrom_);
+        Node* src = app.net().findNode(menuConnectFrom_);
         float x = menuWorld_.x - kNodeW * 0.5f, y = menuWorld_.y;
         if (src && menuConnectFrom_ >= 0 && std::fabs(menuWorld_.y - src->y) < 1) y = src->y + 70;
         app.createNode(chosen->name, x, y, menuConnectFrom_);

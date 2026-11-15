@@ -40,12 +40,14 @@ private:
     char search_[64] = {0};
     int menuHighlight_ = 0;
     // rename
+    int diveId_ = -1;
+    bool upRequested_ = false;
     int renameId_ = -1;
     char renameBuf_[64] = {0};
     void drawNodeMenu(App& app);
 };
 
-enum class FileDialogMode { None, Open, SaveAs, ImportObj, ExportObj, ChooseFileParm, SaveImage, SaveSequence, MergeScene };
+enum class FileDialogMode { None, Open, SaveAs, ImportObj, ExportObj, ChooseFileParm, SaveImage, SaveSequence, MergeScene, InstallAsset };
 
 class App {
 public:
@@ -67,7 +69,23 @@ public:
     NetworkEditor network;
     ImFont* monoFont = nullptr;
 
-    Node* current() const { return graph.findNode(currentId); }
+    // The network level being edited: the scene itself, or the inside of a subnet.
+    Graph& net();
+    Node* current() { return net().findNode(currentId); }
+    const std::vector<std::string>& netPath() const { return netPath_; }
+    void diveInto(Node* subnetNode);
+    void goToLevel(size_t depth); // 0 = top level
+    void collapseSelected();
+    // reusable assets (saved subnets)
+    std::string assetDir() const;
+    const std::vector<std::string>& assets() const { return assets_; }
+    void refreshAssets();
+    void saveAsset(Node* subnetNode);
+    Node* createAsset(const std::string& name, float x, float y, int connectFrom = -1);
+    void deleteAsset(const std::string& name);
+    void installAsset(const std::string& path);
+    void drawAssetManager();
+    bool showAssetManager = false;
     void select(Node* n, bool additive = false);
     void clearSelection() { selection.clear(); currentId = -1; }
 
@@ -135,8 +153,8 @@ private:
     void updateTitle();
     void cookDisplay();
 
-    struct Snapshot { std::string graph; std::vector<std::string> selected; std::string current; };
-    Snapshot snapshot() const;
+    struct Snapshot { std::string graph; std::vector<std::string> selected; std::string current; std::vector<std::string> path; };
+    Snapshot snapshot();
     void restore(const Snapshot& s);
     std::vector<Snapshot> undo_, redo_;
 
@@ -169,6 +187,8 @@ private:
     void syncCameraToScene();
 
     std::vector<std::string> recent_;
+    std::vector<std::string> netPath_; // names of the subnets we have dived into
+    std::vector<std::string> assets_;
     std::string clipboard_;
 
     // file dialog

@@ -115,7 +115,31 @@ int main(int argc, char** argv) {
     app.frameGeometry();
     for (int i = 0; i < 3; ++i) runFrame();
     savePPM(prefix + "_1.ppm", W, H);
-    if (argc > 5) { // menus + display options
+    if (argc > 5 && std::string(argv[5]) == "subnet") { // collapse, dive in, save as asset
+        app.clearSelection();
+        for (const char* nm : {"rock", "rock_noise", "rock_color"})
+            if (hd::Node* n = app.net().findNode(nm)) app.select(n, true);
+        app.collapseSelected();
+        app.network.requestFrameAll();
+        for (int i = 0; i < 5; ++i) runFrame();
+        savePPM(prefix + "_collapsed.ppm", W, H);
+        hd::Node* sn = app.current();
+        std::printf("subnet=%s inside=%zu display_pts=%zu\n", sn ? sn->name().c_str() : "-", sn && sn->subnet() ? sn->subnet()->nodes().size() : 0,
+                    app.graph.displayNode()->geometry().numPoints());
+        if (sn) app.saveAsset(sn);
+        std::printf("assets=%zu\n", app.assets().size());
+        if (sn) app.diveInto(sn);
+        for (int i = 0; i < 6; ++i) runFrame();
+        app.frameGeometry();
+        for (int i = 0; i < 2; ++i) runFrame();
+        savePPM(prefix + "_inside.ppm", W, H);
+        app.goToLevel(0);
+        for (int i = 0; i < 3; ++i) runFrame();
+        app.undo();
+        for (int i = 0; i < 3; ++i) runFrame();
+        std::printf("after undo: nodes=%zu rock=%d\n", app.graph.nodes().size(), app.graph.findNode("rock") != nullptr);
+        if (sn) app.deleteAsset("subnet1");
+    } else if (argc > 5) { // menus + display options
         app.showDisplayOptions = true;
         app.viewOpts.gridSpacing = 0.5f; app.viewOpts.gridCells = 30;
         for (int i = 0; i < 3; ++i) runFrame();

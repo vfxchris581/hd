@@ -8,9 +8,9 @@
 namespace hd {
 
 void App::startRender() {
-    Node* d = graph.displayNode();
+    Node* d = net().displayNode();
     if (!d) { status("Nothing to render: no display node", true); return; }
-    graph.cook(d);
+    net().cook(d);
     if (!d->error().empty()) { status("Cannot render: " + d->name() + " has an error", true); return; }
     syncCameraToScene();
     tracer_.start(d->geometry(), graph.render);

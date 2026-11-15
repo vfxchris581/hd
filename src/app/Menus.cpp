@@ -107,11 +107,11 @@ void App::pushRecent(const std::string& path) {
 void App::copySelected() {
     std::vector<const Node*> sel;
     for (int id : selection)
-        if (Node* n = graph.findNode(id)) sel.push_back(n);
+        if (Node* n = net().findNode(id)) sel.push_back(n);
     if (sel.empty()) return;
     Json j = Json::object();
     j["format"] = "hd-nodes";
-    j["nodes"] = graph.nodesToJson(sel);
+    j["nodes"] = net().nodesToJson(sel);
     clipboard_ = j.dump(0);
     ImGui::SetClipboardText(clipboard_.c_str()); // lets nodes be pasted into another HD window
     status("Copied " + std::to_string(sel.size()) + (sel.size() == 1 ? " node" : " nodes"));
@@ -130,7 +130,7 @@ void App::pasteNodes() {
     Json j = Json::parse(text);
     if (!j.isObject() || j.get("format").str() != "hd-nodes" || j.get("nodes").size() == 0) { status("Nothing to paste", true); return; }
     checkpoint();
-    std::vector<Node*> made = graph.addNodesFromJson(j.get("nodes"), 40, 40);
+    std::vector<Node*> made = net().addNodesFromJson(j.get("nodes"), 40, 40);
     selection.clear();
     for (Node* n : made) selection.insert(n->id());
     currentId = made.empty() ? -1 : made.back()->id();
@@ -145,13 +145,13 @@ void App::mergeScene(const std::string& path) {
     // place the merged network to the right of what is already here
     float right = 0, top = 0, left = 1e9f;
     bool any = false;
-    for (auto& n : graph.nodes()) { right = any ? std::max(right, n->x) : n->x; top = any ? std::min(top, n->y) : n->y; any = true; }
+    for (auto& n : net().nodes()) { right = any ? std::max(right, n->x) : n->x; top = any ? std::min(top, n->y) : n->y; any = true; }
     for (auto& n : other.nodes()) left = std::min(left, n->x);
     float dx = any ? right + 300 - (left < 1e8f ? left : 0) : 0;
     float otherTop = 1e9f;
     for (auto& n : other.nodes()) otherTop = std::min(otherTop, n->y);
     float dy = any && otherTop < 1e8f ? top - otherTop : 0;
-    std::vector<Node*> made = graph.addNodesFromJson(other.toJson().get("nodes"), dx, dy);
+    std::vector<Node*> made = net().addNodesFromJson(other.toJson().get("nodes"), dx, dy);
     selection.clear();
     for (Node* n : made) selection.insert(n->id());
     currentId = made.empty() ? -1 : made.back()->id();
@@ -193,7 +193,7 @@ void App::openExample(const std::string& name) {
         checkpoint();
         buildDemoScene(graph, d.name);
         clearSelection();
-        if (Node* n = graph.displayNode()) select(n);
+        if (Node* n = net().displayNode()) select(n);
         currentFile_.clear();
         frameOnNextCook_ = true;
         network.requestFrameAll();
@@ -251,7 +251,7 @@ void App::drawMenuBar() {
             ImGui::EndMenu();
         }
         if (ImGui::BeginMenu("Export")) {
-            if (ImGui::MenuItem("Geometry (.obj / .ply)...", nullptr, false, graph.displayNode() != nullptr)) openFileDialog(FileDialogMode::ExportObj);
+            if (ImGui::MenuItem("Geometry (.obj / .ply)...", nullptr, false, net().displayNode() != nullptr)) openFileDialog(FileDialogMode::ExportObj);
             unavailable("Alembic Scene...");
             unavailable("Filmbox FBX...");
             ImGui::EndMenu();
@@ -273,9 +273,11 @@ void App::drawMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Select All", "Ctrl+A")) {
             selection.clear();
-            for (auto& n : graph.nodes()) selection.insert(n->id());
+            for (auto& n : net().nodes()) selection.insert(n->id());
         }
         if (ImGui::MenuItem("Select None", nullptr, false, hasSel)) clearSelection();
+        ImGui::Separator();
+        if (ImGui::MenuItem("Collapse Selected Into Subnet", "Shift+C", false, hasSel)) collapseSelected();
         ImGui::Separator();
         if (ImGui::BeginMenu("Preferences")) {
             if (ImGui::MenuItem("3D Viewports...", "D")) showDisplayOptions = true;
@@ -307,9 +309,14 @@ void App::drawMenuBar() {
     }
 
     if (ImGui::BeginMenu("Assets")) {
-        unavailable("New Digital Asset From Selection...");
-        unavailable("Install Asset Library...");
-        unavailable("Asset Manager...");
+        if (ImGui::MenuItem("New Digital Asset From Selection", nullptr, false, hasSel)) {
+            Node* c = current();
+            if (!(selection.size() == 1 && c && c->subnet())) { collapseSelected(); c = current(); } // wrap the selection first
+            if (c && c->subnet()) saveAsset(c);
+        }
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Saves the selected subnet (or collapses the selected nodes into one) as a reusable asset");
+        if (ImGui::MenuItem("Install Asset Library...")) openFileDialog(FileDialogMode::InstallAsset);
+        ImGui::MenuItem("Asset Manager...", nullptr, &showAssetManager);
         ImGui::EndMenu();
     }
 

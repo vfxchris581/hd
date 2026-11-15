@@ -897,6 +897,32 @@ std::vector<NodeType> buildTypes() {
         add(t);
     }
     {
+        NodeType t; t.name = "subnet"; t.label = "Subnetwork"; t.category = "Utility";
+        t.description = "A network inside a node. Dive in to edit it; its Output node is the result.";
+        t.minInputs = 0; t.maxInputs = 4;
+        t.inputLabels = {"Subnet Input 1", "Subnet Input 2", "Subnet Input 3", "Subnet Input 4"};
+        t.cook = Graph::cookSubnet;
+        add(t);
+    }
+    {
+        NodeType t; t.name = "input"; t.label = "Subnet Input"; t.category = "Utility";
+        t.description = "Inside a subnet: brings in the geometry wired to one of the subnet's inputs.";
+        t.parms = {I("index", "Input Number", 1, 1, 4)};
+        t.cook = [](CookContext& c) {
+            if (!c.graph().parent()) { c.warning("Subnet Input only does something inside a subnetwork."); return; }
+            std::string err;
+            if (!c.graph().fetchExternal(c.i("index") - 1, c.frame(), c.out, &err) && !err.empty()) c.error(err);
+        };
+        add(t);
+    }
+    {
+        NodeType t; t.name = "output"; t.label = "Output"; t.category = "Utility";
+        t.description = "Inside a subnet: marks the geometry the subnet returns.";
+        t.minInputs = 0; t.maxInputs = 1;
+        t.cook = [](CookContext& c) { if (c.hasInput(0)) c.out = c.input(0); };
+        add(t);
+    }
+    {
         NodeType t; t.name = "switch"; t.label = "Switch"; t.category = "Utility";
         t.description = "Outputs one of its inputs, chosen by index (animatable).";
         t.minInputs = 0; t.maxInputs = 8;
