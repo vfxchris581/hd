@@ -55,7 +55,7 @@ void NetworkEditor::frameAll(App& app) {
 
 void NetworkEditor::draw(App& app) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    bool open = ImGui::Begin("Network", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    bool open = ImGui::Begin("Network", &app.showNetwork, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
     if (!open) { ImGui::End(); return; }
 

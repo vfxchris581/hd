@@ -138,10 +138,9 @@ void main() {
 const char* kBgFS = R"(#version 330 core
 in float vY;
 out vec4 frag;
+uniform vec3 uTop, uBot;
 void main() {
-    vec3 top = vec3(0.40, 0.43, 0.48);
-    vec3 bot = vec3(0.13, 0.135, 0.15);
-    frag = vec4(mix(bot, top, smoothstep(0.0, 1.0, vY)), 1.0);
+    frag = vec4(mix(uBot, uTop, smoothstep(0.0, 1.0, vY)), 1.0);
 })";
 
 const char* kVolVS = R"(#version 330 core
@@ -275,22 +274,37 @@ bool Renderer::init(std::string& error) {
     glGetIntegerv(GL_MAX_SAMPLES, &maxSamples);
     samples_ = std::max(1, std::min(4, int(maxSamples)));
 
-    // ground grid: 1 unit spacing, 20x20, axis lines highlighted
+    inited_ = true;
+    return true;
+}
+
+void Renderer::rebuildGrid(const ViewOptions& opt) {
+    const float key[8] = {float(opt.gridPlane), opt.gridOrigin.x, opt.gridOrigin.y, opt.gridOrigin.z, opt.gridSpacing, float(opt.gridCells), float(opt.gridRuler), 1.f};
+    bool same = true;
+    for (int i = 0; i < 8; ++i) same &= key[i] == gridKey_[i];
+    if (same) return;
+    for (int i = 0; i < 8; ++i) gridKey_[i] = key[i];
+    // axes spanning the plane; axis lines take the usual X = red, Y = green, Z = blue
+    const int u = opt.gridPlane == 2 ? 1 : 0, v = opt.gridPlane == 1 ? 1 : 2;
+    const Vec3 axisCol[3] = {Vec3(0.85f, 0.25f, 0.25f), Vec3(0.35f, 0.8f, 0.3f), Vec3(0.3f, 0.45f, 0.95f)};
+    const int half = std::clamp(opt.gridCells, 2, 400) / 2;
+    const float sp = std::max(opt.gridSpacing, 1e-4f), ext = float(half) * sp;
+    const int ruler = std::max(1, opt.gridRuler);
     std::vector<float> g;
-    const int half = 10;
     for (int i = -half; i <= half; ++i) {
-        Vec3 c = (i % 5 == 0) ? Vec3(0.55f) : Vec3(0.38f);
-        Vec3 cx = i == 0 ? Vec3(0.85f, 0.25f, 0.25f) : c; // X axis line (z = 0)
-        Vec3 cz = i == 0 ? Vec3(0.3f, 0.45f, 0.95f) : c;  // Z axis line (x = 0)
-        push3(g, Vec3(float(-half), 0, float(i))); push3(g, cx);
-        push3(g, Vec3(float(half), 0, float(i))); push3(g, cx);
-        push3(g, Vec3(float(i), 0, float(-half))); push3(g, cz);
-        push3(g, Vec3(float(i), 0, float(half))); push3(g, cz);
+        Vec3 c = (i % ruler == 0) ? Vec3(0.55f) : Vec3(0.38f);
+        float pos = float(i) * sp;
+        Vec3 a(0), b(0), c0(0), d(0);
+        a[u] = -ext; a[v] = pos; b[u] = ext; b[v] = pos;   // parallel to u
+        c0[v] = -ext; c0[u] = pos; d[v] = ext; d[u] = pos; // parallel to v
+        Vec3 cu = i == 0 ? axisCol[u] : c, cv = i == 0 ? axisCol[v] : c;
+        push3(g, a + opt.gridOrigin); push3(g, cu);
+        push3(g, b + opt.gridOrigin); push3(g, cu);
+        push3(g, c0 + opt.gridOrigin); push3(g, cv);
+        push3(g, d + opt.gridOrigin); push3(g, cv);
     }
     const int lineLayout[2] = {3, 3};
     upload(grid_, g, 6, lineLayout, 2);
-    inited_ = true;
-    return true;
 }
 
 void Renderer::shutdown() {
@@ -545,6 +559,8 @@ unsigned Renderer::render(int w, int h, const Camera& cam, const ViewOptions& op
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glUseProgram(progBg_);
+    glUniform3f(glGetUniformLocation(progBg_, "uTop"), opt.bgTop.x, opt.bgTop.y, opt.bgTop.z);
+    glUniform3f(glGetUniformLocation(progBg_, "uBot"), opt.bgBottom.x, opt.bgBottom.y, opt.bgBottom.z);
     glBindVertexArray(bgVao_);
     glDrawArrays(GL_TRIANGLES, 0, 3);
     glDepthMask(GL_TRUE);
@@ -555,6 +571,7 @@ unsigned Renderer::render(int w, int h, const Camera& cam, const ViewOptions& op
 
     // grid (alpha blended, no depth write)
     if (opt.grid) {
+        rebuildGrid(opt);
         glEnable(GL_BLEND);
         glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         glDepthMask(GL_FALSE);
@@ -563,7 +580,7 @@ unsigned Renderer::render(int w, int h, const Camera& cam, const ViewOptions& op
         setMat(progLine_, "uProj", P);
         glUniform1f(glGetUniformLocation(progLine_, "uDepthBias"), 0.f);
         glUniform4f(glGetUniformLocation(progLine_, "uOverride"), 0, 0, 0, 0);
-        glUniform1f(glGetUniformLocation(progLine_, "uAlpha"), 0.55f);
+        glUniform1f(glGetUniformLocation(progLine_, "uAlpha"), std::clamp(opt.gridOpacity, 0.f, 1.f));
         drawBatch(grid_, GL_LINES);
         glDepthMask(GL_TRUE);
         glDisable(GL_BLEND);

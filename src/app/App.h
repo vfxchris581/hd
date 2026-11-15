@@ -45,7 +45,7 @@ private:
     void drawNodeMenu(App& app);
 };
 
-enum class FileDialogMode { None, Open, SaveAs, ImportObj, ExportObj, ChooseFileParm, SaveImage, SaveSequence };
+enum class FileDialogMode { None, Open, SaveAs, ImportObj, ExportObj, ChooseFileParm, SaveImage, SaveSequence, MergeScene };
 
 class App {
 public:
@@ -104,6 +104,22 @@ public:
     void drawFileDialog();
     void drawHelpWindows();
 
+    // menus, preferences, clipboard (Menus.cpp)
+    void drawDisplayOptions();
+    void drawRenderSettings();
+    void stepSequence();
+    void loadPrefs();
+    void savePrefs();
+    void pushRecent(const std::string& path);
+    void copySelected();
+    void cutSelected();
+    void pasteNodes();
+    void mergeScene(const std::string& path);
+    void saveIncrement();
+    void openExample(const std::string& name);
+    bool showSceneView = true, showNetwork = true, showParms = true, showSpreadsheet = true, showRenderView = true, showTimeline = true;
+    bool showDisplayOptions = false, showRenderSettings = false;
+
     bool playing = false;
     bool realtime = true;
     bool showShortcuts = false;
@@ -129,6 +145,7 @@ private:
     bool dirty_ = false;
     bool layoutBuilt_ = false;
     bool forceLayout_ = false;
+    int focusSceneView_ = 0; // frames until the Scene View tab is brought to the front
     bool confirmClose_ = false;
     bool allowClose_ = false;
     double lastTime_ = 0;
@@ -150,6 +167,9 @@ private:
     int seqFrame_ = 0, seqEnd_ = 0, seqCount_ = 0;
     std::string seqBase_;
     void syncCameraToScene();
+
+    std::vector<std::string> recent_;
+    std::string clipboard_;
 
     // file dialog
     FileDialogMode fileMode_ = FileDialogMode::None;

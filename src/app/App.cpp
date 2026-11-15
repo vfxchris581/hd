@@ -23,6 +23,7 @@ bool App::init(GLFWwindow* window, const std::string& startupFile) {
         return false;
     }
     fileDir_ = fs::current_path().string();
+    loadPrefs();
     if (!startupFile.empty() && loadScene(startupFile)) {
         // loaded
     } else {
@@ -33,6 +34,7 @@ bool App::init(GLFWwindow* window, const std::string& startupFile) {
 }
 
 void App::shutdown() {
+    savePrefs();
     tracer_.stop();
     renderer.shutdown();
 }
@@ -220,6 +222,7 @@ bool App::loadScene(const std::string& path) {
         frameOnNextCook_ = false;
     }
     network.requestFrameAll();
+    pushRecent(path);
     status(err.empty() ? "Opened " + path : "Opened with warnings: " + err, !err.empty());
     return true;
 }
@@ -239,6 +242,7 @@ bool App::saveScene(const std::string& path) {
     }
     currentFile_ = path;
     dirty_ = false;
+    pushRecent(path);
     status("Saved " + path);
     return true;
 }
@@ -296,6 +300,11 @@ void App::handleGlobalShortcuts() {
     if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_N)) { checkpoint(); newScene(false); }
     if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_Q)) glfwSetWindowShouldClose(window_, 1);
     if (!typing) {
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C)) copySelected();
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_X)) cutSelected();
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_V)) pasteNodes();
+    }
+    if (!typing) {
         // Houdini-style: up/down arrow steps frames, left/right too
         if (ImGui::IsKeyPressed(ImGuiKey_RightArrow) && !io.KeyCtrl) graph.frame = std::min(graph.frame + 1, float(graph.frameEnd));
         if (ImGui::IsKeyPressed(ImGuiKey_LeftArrow) && !io.KeyCtrl) graph.frame = std::max(graph.frame - 1, float(graph.frameStart));
@@ -327,17 +336,23 @@ void App::frame() {
         ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockId);
         if (forceLayout_ || !node || node->IsLeafNode()) buildDefaultLayout(dockId);
         forceLayout_ = false;
+        focusSceneView_ = 3;
     }
 
+    // tabs only exist after their first frame, so select the Scene View a little later
+    if (focusSceneView_ > 0 && --focusSceneView_ == 0) ImGui::SetWindowFocus("Scene View");
     handleGlobalShortcuts();
     cookDisplay();
     drawMenuBar();
-    drawViewport();
-    network.draw(*this);
-    drawParameters();
-    drawSpreadsheet();
-    drawTimeline();
-    drawRenderView();
+    if (showSceneView) drawViewport();
+    if (showNetwork) network.draw(*this);
+    if (showParms) drawParameters();
+    if (showSpreadsheet) drawSpreadsheet();
+    if (showTimeline) drawTimeline();
+    stepSequence();
+    if (showRenderView) drawRenderView();
+    drawDisplayOptions();
+    drawRenderSettings();
     drawFileDialog();
     drawHelpWindows();
     if (showImGuiDemo) ImGui::ShowDemoWindow(&showImGuiDemo);
@@ -381,85 +396,6 @@ void App::buildDefaultLayout(unsigned dockIdIn) {
 }
 
 // ---------------------------------------------------------------- menu & status
-void App::drawMenuBar() {
-    if (!ImGui::BeginMainMenuBar()) return;
-    if (ImGui::BeginMenu("File")) {
-        if (ImGui::MenuItem("New", "Ctrl+N")) { checkpoint(); newScene(false); }
-        if (ImGui::MenuItem("Open...", "Ctrl+O")) openFileDialog(FileDialogMode::Open);
-        if (ImGui::BeginMenu("Open Example")) {
-            for (auto& d : demoScenes()) {
-                if (ImGui::MenuItem(d.title.c_str())) {
-                    checkpoint();
-                    buildDemoScene(graph, d.name);
-                    clearSelection();
-                    if (Node* n = graph.displayNode()) select(n);
-                    currentFile_.clear();
-                    frameOnNextCook_ = true;
-                    network.requestFrameAll();
-                    status(d.description);
-                }
-                if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", d.description.c_str());
-            }
-            ImGui::EndMenu();
-        }
-        ImGui::Separator();
-        if (ImGui::MenuItem("Save", "Ctrl+S")) {
-            if (currentFile_.empty()) openFileDialog(FileDialogMode::SaveAs);
-            else saveScene(currentFile_);
-        }
-        if (ImGui::MenuItem("Save As...", "Ctrl+Shift+S")) openFileDialog(FileDialogMode::SaveAs);
-        ImGui::Separator();
-        if (ImGui::MenuItem("Import OBJ...")) openFileDialog(FileDialogMode::ImportObj);
-        if (ImGui::MenuItem("Export Display Geometry...", nullptr, false, graph.displayNode() != nullptr)) openFileDialog(FileDialogMode::ExportObj);
-        ImGui::Separator();
-        if (ImGui::MenuItem("Quit", "Ctrl+Q")) glfwSetWindowShouldClose(window_, 1);
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Edit")) {
-        if (ImGui::MenuItem("Undo", "Ctrl+Z", false, canUndo())) undo();
-        if (ImGui::MenuItem("Redo", "Ctrl+Shift+Z", false, canRedo())) redo();
-        ImGui::Separator();
-        if (ImGui::MenuItem("Duplicate Nodes", "Ctrl+D", false, !selection.empty())) duplicateSelected();
-        if (ImGui::MenuItem("Delete Nodes", "Del", false, !selection.empty())) deleteSelected();
-        if (ImGui::MenuItem("Select All", "Ctrl+A")) {
-            selection.clear();
-            for (auto& n : graph.nodes()) selection.insert(n->id());
-        }
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Display")) {
-        ImGui::MenuItem("Shaded", "", &viewOpts.shaded);
-        ImGui::MenuItem("Wireframe Overlay", "W", &viewOpts.wireframe);
-        ImGui::MenuItem("Points", "", &viewOpts.points);
-        ImGui::MenuItem("Point Numbers", "", &showPointNumbers);
-        ImGui::MenuItem("Primitive Numbers", "", &showPrimNumbers);
-        ImGui::MenuItem("Point Normals", "", &viewOpts.normals);
-        ImGui::MenuItem("Ground Grid", "", &viewOpts.grid);
-        ImGui::MenuItem("Tint Backfaces", "", &viewOpts.backfaceTint);
-        ImGui::Separator();
-        if (ImGui::MenuItem("Frame Geometry", "F")) frameGeometry();
-        if (ImGui::MenuItem("Home Camera", "H")) camera.home();
-        if (ImGui::MenuItem("Reset Layout")) { layoutBuilt_ = false; forceLayout_ = true; }
-        ImGui::EndMenu();
-    }
-    if (ImGui::BeginMenu("Help")) {
-        ImGui::MenuItem("Shortcuts", "", &showShortcuts);
-        ImGui::MenuItem("VEX-lite Reference", "", &showVexHelp);
-        ImGui::MenuItem("UI Toolkit Demo", "", &showImGuiDemo);
-        ImGui::Separator();
-        ImGui::MenuItem("About HD", "", &showAbout);
-        ImGui::EndMenu();
-    }
-    // right-aligned info
-    char info[128];
-    std::snprintf(info, sizeof info, "%s   %.0f fps", currentFile_.empty() ? "untitled" : fs::path(currentFile_).filename().string().c_str(),
-                  double(ImGui::GetIO().Framerate));
-    float w = ImGui::CalcTextSize(info).x;
-    ImGui::SameLine(ImGui::GetWindowWidth() - w - 16);
-    ImGui::TextDisabled("%s", info);
-    ImGui::EndMainMenuBar();
-}
-
 // ---------------------------------------------------------------- file dialog
 void App::openFileDialog(FileDialogMode mode) {
     fileMode_ = mode;
@@ -485,12 +421,12 @@ void App::drawFileDialog() {
     }
     ImGui::SetNextWindowSize(ImVec2(640, 460), ImGuiCond_Appearing);
     if (!ImGui::BeginPopupModal("File Browser", nullptr)) return;
-    const char* titles[] = {"", "Open Scene", "Save Scene As", "Import OBJ", "Export Geometry (.obj / .ply)", "Choose File", "Save Rendered Image", "Render Sequence To (frame numbers are added)"};
+    const char* titles[] = {"", "Open Scene", "Save Scene As", "Import OBJ", "Export Geometry (.obj / .ply)", "Choose File", "Save Rendered Image", "Render Sequence To (frame numbers are added)", "Merge Scene"};
     ImGui::TextUnformatted(titles[int(fileMode_)]);
     ImGui::Separator();
     bool saving = fileMode_ == FileDialogMode::SaveAs || fileMode_ == FileDialogMode::ExportObj || fileMode_ == FileDialogMode::SaveImage || fileMode_ == FileDialogMode::SaveSequence;
     std::vector<std::string> exts;
-    if (fileMode_ == FileDialogMode::Open || fileMode_ == FileDialogMode::SaveAs) exts = {".hdg"};
+    if (fileMode_ == FileDialogMode::Open || fileMode_ == FileDialogMode::SaveAs || fileMode_ == FileDialogMode::MergeScene) exts = {".hdg"};
     else if (fileMode_ == FileDialogMode::ExportObj) exts = {".obj", ".ply"};
     else if (fileMode_ == FileDialogMode::SaveImage || fileMode_ == FileDialogMode::SaveSequence) exts = {".png"};
     else exts = {".obj"};
@@ -594,6 +530,7 @@ void App::drawFileDialog() {
             }
             break;
         }
+        case FileDialogMode::MergeScene: mergeScene(chosen); break;
         case FileDialogMode::SaveImage: {
             bool ok = writePng(chosen, renderImg_, renderW_, renderH_, &err);
             status(ok ? "Saved " + chosen : "Save failed: " + err, !ok);
@@ -652,6 +589,8 @@ void App::drawHelpWindows() {
                 row("Ctrl+Z / Ctrl+Shift+Z", "Undo / redo");
                 row("Ctrl+S / Ctrl+O / Ctrl+N", "Save / open / new");
                 row("Parameters: right-click label", "Expressions, revert to default");
+                row("Viewport: D", "Display Options (ground plane, markers, background)");
+                row("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / cut / paste nodes");
                 row("Render View: Render", "Path-trace the displayed node from the viewport camera");
                 ImGui::EndTable();
             }

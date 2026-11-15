@@ -23,7 +23,7 @@ int g_vpDrag = 0; // 0 none, 1 tumble, 2 pan, 3 dolly
 // ---------------------------------------------------------------- viewport
 void App::drawViewport() {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(0, 0));
-    bool open = ImGui::Begin("Scene View", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    bool open = ImGui::Begin("Scene View", &showSceneView, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PopStyleVar();
     if (!open) { ImGui::End(); return; }
 
@@ -40,6 +40,8 @@ void App::drawViewport() {
     ImGui::SameLine(); ImGui::TextDisabled("|");
     ImGui::SameLine(); if (ImGui::SmallButton("Frame")) frameGeometry();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Frame geometry (F)");
+    ImGui::SameLine(); if (ImGui::SmallButton("Display Options")) showDisplayOptions = true;
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ground plane, markers, background (D)");
     ImGui::SameLine(); if (ImGui::SmallButton("Home")) camera.home();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Home camera (H)");
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2);
@@ -77,6 +79,7 @@ void App::drawViewport() {
         if (ImGui::IsKeyPressed(ImGuiKey_F, false)) frameGeometry();
         if (ImGui::IsKeyPressed(ImGuiKey_H, false)) camera.home();
         if (ImGui::IsKeyPressed(ImGuiKey_W, false) && !io.KeyCtrl) viewOpts.wireframe = !viewOpts.wireframe;
+        if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !io.KeyCtrl) showDisplayOptions = !showDisplayOptions;
     }
 
     // overlays
@@ -143,7 +146,7 @@ void App::drawViewport() {
 
 // ---------------------------------------------------------------- spreadsheet
 void App::drawSpreadsheet() {
-    if (!ImGui::Begin("Geometry Spreadsheet")) { ImGui::End(); return; }
+    if (!ImGui::Begin("Geometry Spreadsheet", &showSpreadsheet)) { ImGui::End(); return; }
     Node* n = current();
     if (!n) n = graph.displayNode();
     if (!n) { ImGui::TextDisabled("No node selected."); ImGui::End(); return; }

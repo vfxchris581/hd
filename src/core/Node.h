@@ -195,6 +195,10 @@ public:
     bool upstreamTimeDependent(const Node* n) const;
 
     void clear();
+    // Adds nodes described by a "nodes" JSON array (as written by toJson), offset by (dx, dy).
+    // Names that clash are made unique; wires are kept between the added nodes only.
+    std::vector<Node*> addNodesFromJson(const Json& nodes, float dx, float dy, std::string* warnings = nullptr);
+    Json nodesToJson(const std::vector<const Node*>& subset) const;
     Json toJson() const;
     bool fromJson(const Json& j, std::string* error = nullptr);
     bool save(const std::string& path, std::string* error = nullptr) const;

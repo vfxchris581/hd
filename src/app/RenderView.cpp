@@ -16,10 +16,7 @@ void App::startRender() {
     tracer_.start(d->geometry(), graph.render);
 }
 
-void App::drawRenderView() {
-    if (!ImGui::Begin("Render View", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) { ImGui::End(); return; }
-    RenderSettings& rs = graph.render;
-
+void App::stepSequence() {
     // ---- sequence rendering: one frame at a time
     if (seqActive_ && !tracer_.running()) {
         if (seqWaiting_) {
@@ -50,6 +47,40 @@ void App::drawRenderView() {
         }
     }
 
+}
+
+void App::drawRenderSettings() {
+    if (!showRenderSettings) return;
+    RenderSettings& rs = graph.render;
+    ImGui::SetNextWindowSize(ImVec2(380, 0), ImGuiCond_FirstUseEver);
+    if (ImGui::Begin("Render Settings", &showRenderSettings, ImGuiWindowFlags_NoDocking | ImGuiWindowFlags_AlwaysAutoResize)) {
+        bool ch = false;
+        ImGui::SeparatorText("Output");
+        ch |= ImGui::InputInt("Width", &rs.width, 16, 160);
+        ch |= ImGui::InputInt("Height", &rs.height, 16, 160);
+        ch |= ImGui::InputInt("Samples", &rs.samples, 8, 64);
+        rs.width = std::clamp(rs.width, 16, 4096); rs.height = std::clamp(rs.height, 16, 4096); rs.samples = std::clamp(rs.samples, 1, 100000);
+        ImGui::SeparatorText("Light");
+        ch |= ImGui::SliderFloat("Sun Direction", &rs.sunAzimuth, 0, 360, "%.0f deg");
+        ch |= ImGui::SliderFloat("Sun Height", &rs.sunElevation, 2, 90, "%.0f deg");
+        ch |= ImGui::SliderFloat("Sun Brightness", &rs.sunIntensity, 0, 10);
+        ch |= ImGui::SliderFloat("Sky Brightness", &rs.skyIntensity, 0, 4);
+        ch |= ImGui::SliderFloat("Exposure", &rs.exposure, 0.1f, 5);
+        ImGui::SeparatorText("Scene");
+        ch |= ImGui::Checkbox("Ground Plane", &rs.ground);
+        ch |= ImGui::DragFloat("Ground Height", &rs.groundY, 0.01f);
+        ch |= ImGui::DragFloat("Curve Thickness", &rs.curveWidth, 0.001f, 0.001f, 1.f, "%.3f");
+        ch |= ImGui::SliderInt("Light Bounces", &rs.bounces, 0, 12);
+        ImGui::TextDisabled("Changes apply to the next render. Use a Material node\nfor roughness, metallic and glow.");
+        if (ch) markDirty();
+    }
+    ImGui::End();
+}
+
+void App::drawRenderView() {
+    if (!ImGui::Begin("Render View", &showRenderView, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse)) { ImGui::End(); return; }
+    RenderSettings& rs = graph.render;
+
     // ---- toolbar
     bool busy = tracer_.running();
     if (!busy) {
@@ -78,7 +109,7 @@ void App::drawRenderView() {
     if (ImGui::DragInt("##samples", &rs.samples, 1, 1, 4096, "%d samples")) { rs.samples = std::max(1, rs.samples); markDirty(); }
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("More samples = less noise, longer render");
     ImGui::SameLine();
-    if (ImGui::Button("Settings")) ImGui::OpenPopup("Render Settings");
+    if (ImGui::Button("Settings")) showRenderSettings = true;
     ImGui::SameLine();
     if (ImGui::Button("Save Image...") && !renderImg_.empty()) openFileDialog(FileDialogMode::SaveImage);
     ImGui::SameLine();
@@ -89,24 +120,6 @@ void App::drawRenderView() {
     if (tracer_.samplesTarget() > 0) {
         if (seqActive_) ImGui::Text("Frame %d / %d   %d / %d samples", seqFrame_, seqEnd_, tracer_.samplesDone(), tracer_.samplesTarget());
         else ImGui::TextDisabled("%d / %d samples   %.1fs%s", tracer_.samplesDone(), tracer_.samplesTarget(), tracer_.secondsElapsed(), busy ? "" : "   done");
-    }
-
-    if (ImGui::BeginPopup("Render Settings")) {
-        bool ch = false;
-        ImGui::SeparatorText("Light");
-        ch |= ImGui::SliderFloat("Sun Direction", &rs.sunAzimuth, 0, 360, "%.0f deg");
-        ch |= ImGui::SliderFloat("Sun Height", &rs.sunElevation, 2, 90, "%.0f deg");
-        ch |= ImGui::SliderFloat("Sun Brightness", &rs.sunIntensity, 0, 10);
-        ch |= ImGui::SliderFloat("Sky Brightness", &rs.skyIntensity, 0, 4);
-        ch |= ImGui::SliderFloat("Exposure", &rs.exposure, 0.1f, 5);
-        ImGui::SeparatorText("Scene");
-        ch |= ImGui::Checkbox("Ground Plane", &rs.ground);
-        ch |= ImGui::DragFloat("Ground Height", &rs.groundY, 0.01f);
-        ch |= ImGui::DragFloat("Curve Thickness", &rs.curveWidth, 0.001f, 0.001f, 1.f, "%.3f");
-        ch |= ImGui::SliderInt("Light Bounces", &rs.bounces, 0, 12);
-        ImGui::TextDisabled("Changes apply to the next render. Use a Material node\nfor roughness, metallic and glow.");
-        if (ch) markDirty();
-        ImGui::EndPopup();
     }
 
     // ---- image

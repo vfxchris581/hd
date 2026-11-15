@@ -36,6 +36,16 @@ struct ViewOptions {
     float pointSize = 5.f;
     float normalScale = 0.15f;
     Vec3 defaultColor{0.72f, 0.74f, 0.78f};
+    // reference (ground) plane
+    int gridPlane = 0;          // 0 = XZ, 1 = XY, 2 = YZ
+    Vec3 gridOrigin{0, 0, 0};
+    float gridSpacing = 1.f;
+    int gridCells = 20;         // lines across
+    int gridRuler = 5;          // brighter line every N cells
+    float gridOpacity = 0.55f;
+    // background gradient
+    Vec3 bgTop{0.40f, 0.43f, 0.48f};
+    Vec3 bgBottom{0.13f, 0.135f, 0.15f};
 };
 
 struct RenderStats {
@@ -72,6 +82,8 @@ private:
     void upload(Batch& b, const std::vector<float>& data, int floatsPerVertex, const int* layout, int nAttribs);
     void ensureTargets(int w, int h);
     void drawBatch(const Batch& b, unsigned mode);
+    void rebuildGrid(const ViewOptions& opt);
+    float gridKey_[8] = {-1, 0, 0, 0, 0, 0, 0, 0};
     void drawVolumes(int w, int h, const Camera& cam);
     struct GpuVolume {
         unsigned tex = 0;

@@ -334,6 +334,47 @@ TEST(serialization) {
     CHECK(g2.toJson().dump() == text);
 }
 
+TEST(copy_paste_and_merge_nodes) {
+    Graph g;
+    Node* box = g.createNode("box", 0, 0);
+    Node* xf = g.createNode("xform", 0, 80);
+    Node* out = g.createNode("null", 0, 160, "OUT");
+    g.connect(box, xf, 0);
+    g.connect(xf, out, 0);
+    xf->parm("t")->val[1] = 3;
+    xf->parm("r")->expr[1] = "$F";
+    // copy two of the three nodes and paste them back
+    Json nodes = g.nodesToJson({xf, out});
+    CHECK(nodes.size() == 2);
+    std::vector<Node*> made = g.addNodesFromJson(Json::parse(nodes.dump(0)), 40, 40);
+    CHECK(made.size() == 2 && g.nodes().size() == 5);
+    if (made.size() == 2) {
+        Node* xf2 = made[0]->type().name == "xform" ? made[0] : made[1];
+        Node* out2 = made[0] == xf2 ? made[1] : made[0];
+        CHECK(xf2->name() != "xform1" && out2->name() != "OUT"); // renamed, not clashing
+        NEAR(xf2->parm("t")->val[1], 3);
+        CHECK(xf2->parm("r")->expr[1] == "$F");
+        NEAR(xf2->x, 40); NEAR(xf2->y, 120);
+        CHECK(out2->inputs[0] == xf2);    // wire inside the copied set is kept
+        CHECK(xf2->inputs[0] == nullptr); // wire to a node outside the set is not
+        CHECK(xf->inputs[0] == box && out->inputs[0] == xf); // originals untouched
+    }
+    // merging a whole scene keeps its wiring and leaves the display node alone
+    Graph other;
+    buildDemoScene(other, "sculpt");
+    size_t before = g.nodes().size();
+    Node* disp = g.displayNode();
+    made = g.addNodesFromJson(other.toJson().get("nodes"), 500, 0);
+    CHECK(made.size() == other.nodes().size() && g.nodes().size() == before + made.size());
+    CHECK(g.displayNode() == disp);
+    int wired = 0;
+    for (Node* n : made) for (Node* in : n->inputs) wired += in != nullptr;
+    int expect = 0;
+    for (auto& n : other.nodes()) for (Node* in : n->inputs) expect += in != nullptr;
+    CHECK(wired == expect);
+    for (Node* n : made) { g.cook(n); CHECK(n->error().empty()); }
+}
+
 TEST(obj_roundtrip) {
     Graph g;
     Node* s = g.createNode("sphere");

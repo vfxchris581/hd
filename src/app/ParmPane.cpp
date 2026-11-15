@@ -15,7 +15,7 @@ ImVec4 kExprBg(0.16f, 0.36f, 0.18f, 1.f);
 } // namespace
 
 void App::drawParameters() {
-    if (!ImGui::Begin("Parameters")) { ImGui::End(); return; }
+    if (!ImGui::Begin("Parameters", &showParms)) { ImGui::End(); return; }
     Node* n = current();
     if (!n) {
         ImGui::TextDisabled("Select a node in the Network to edit its parameters.");

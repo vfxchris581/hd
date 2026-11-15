@@ -115,7 +115,28 @@ int main(int argc, char** argv) {
     app.frameGeometry();
     for (int i = 0; i < 3; ++i) runFrame();
     savePPM(prefix + "_1.ppm", W, H);
-    if (argc > 4) { // render view
+    if (argc > 5) { // menus + display options
+        app.showDisplayOptions = true;
+        app.viewOpts.gridSpacing = 0.5f; app.viewOpts.gridCells = 30;
+        for (int i = 0; i < 3; ++i) runFrame();
+        if (ImGuiWindow* dw = ImGui::FindWindowByName("Display Options")) ImGui::SetWindowPos(dw, ImVec2(420, 420));
+        for (int i = 0; i < 2; ++i) runFrame();
+        // open the File menu by clicking it
+        io.AddMousePosEvent(22, 10); runFrame();
+        io.AddMouseButtonEvent(0, true); runFrame();
+        io.AddMouseButtonEvent(0, false); runFrame(); runFrame();
+        savePPM(prefix + "_menus.ppm", W, H);
+        io.AddKeyEvent(ImGuiKey_Escape, true); runFrame();
+        io.AddKeyEvent(ImGuiKey_Escape, false); runFrame();
+        io.AddMousePosEvent(214, 10); runFrame();  // Windows menu
+        io.AddMouseButtonEvent(0, true); runFrame();
+        io.AddMouseButtonEvent(0, false); runFrame(); runFrame();
+        savePPM(prefix + "_windows.ppm", W, H);
+        io.AddKeyEvent(ImGuiKey_Escape, true); runFrame();
+        io.AddKeyEvent(ImGuiKey_Escape, false); runFrame();
+        app.showDisplayOptions = false;
+    }
+    if (argc > 4 && std::atoi(argv[4]) > 0) { // render view
         app.graph.render.samples = std::atoi(argv[4]);
         app.startRender();
         ImGui::SetWindowFocus("Render View");

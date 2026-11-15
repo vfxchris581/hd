@@ -25,6 +25,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 - **Animation.** Right-click any parameter and choose **Add Expression** (e.g. `sin($T*2)`, `$F*1.5`). Nodes that depend on time recook during playback; everything else stays cached.
 - **Groups.** Group fields take `0-10 15 20-40:2`, an expression such as `@P.y > 0`, and `!` to invert.
 - **Viewport.** Smooth-shaded surfaces with wireframe overlay, points (sized by `pscale` for point clouds), normals, point and primitive numbers, a ground grid and an axis gizmo. Rendering uses 4× MSAA.
+- **Menus.** The menu bar follows Houdini's layout: **File** (recent files, Save and Increment, Revert, Merge, Import, Export), **Edit** (cut, copy, paste, preferences), **Render**, **Assets**, **Windows** (show or hide each pane, reset the layout) and **Help**. Entries for things HD doesn't have yet (digital assets, Alembic/FBX/USD, Python shell) are greyed out.
+- **Display Options.** Press **D** in the viewport. The Grid tab sets the ground reference plane (on/off, XZ/XY/YZ, origin, spacing, size, ruler lines, opacity); other tabs cover markers, shading and background colors. These settings are remembered between sessions.
 - **Geometry Spreadsheet.** Shows every point and primitive attribute of the selected node.
 - **Timeline.** Play, step, set the frame range and fps.
 - **Files and history.** Undo/redo for everything, scenes saved as `.hdg` (readable JSON), OBJ import/export and PLY point export. You can drag `.hdg` and `.obj` files onto the window.
@@ -81,10 +83,12 @@ ctest --test-dir build -C Release          # core engine tests
 | Viewport | Tumble / pan / dolly | Left / middle / right drag; wheel zooms |
 | | Frame geometry / home | F / H |
 | | Wireframe overlay | W |
+| | Display Options (ground plane) | D |
 | Global | Previous / next frame | Left / Right arrow |
 | | Play / stop | Alt+Up, or the Play button |
 | | Undo / redo | Ctrl+Z / Ctrl+Shift+Z |
 | | New / open / save | Ctrl+N / Ctrl+O / Ctrl+S |
+| | Copy / cut / paste nodes | Ctrl+C / Ctrl+X / Ctrl+V |
 
 On macOS, use Cmd wherever the table says Ctrl.
 

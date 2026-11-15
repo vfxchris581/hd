@@ -3,6 +3,7 @@
 #include <cctype>
 #include <chrono>
 #include <fstream>
+#include <map>
 #include <sstream>
 #include <unordered_map>
 
@@ -392,6 +393,55 @@ Json Graph::toJson() const {
     return root;
 }
 
+std::vector<Node*> Graph::addNodesFromJson(const Json& nodes, float dx, float dy, std::string* warningsOut) {
+    std::vector<std::pair<Node*, const Json*>> created;
+    std::map<std::string, Node*> byOldName; // names can change when they clash with existing nodes
+    std::string warnings;
+    for (auto& jn : nodes.items()) {
+        Node* n = createNode(jn.get("type").str(), float(jn.get("x").num()) + dx, float(jn.get("y").num()) + dy, jn.get("name").str());
+        if (!n) { warnings += "unknown node type '" + jn.get("type").str() + "'; "; continue; }
+        n->bypass = jn.get("bypass").boolean();
+        n->comment = jn.get("comment").str();
+        const Json& parms = jn.get("parms");
+        for (auto& p : n->parms()) {
+            const ParmDef& d = *p.def;
+            if (!parms.has(d.name)) continue;
+            const Json& v = parms.get(d.name);
+            if (d.type == ParmType::String || d.type == ParmType::Code || d.type == ParmType::File) {
+                p.str = v.str();
+                continue;
+            }
+            if (v.isArray()) for (int c = 0; c < 3 && c < int(v.size()); ++c) p.val[c] = float(v[size_t(c)].num());
+            else p.val[0] = float(v.num());
+            const Json& e = parms.get(d.name + ".expr");
+            for (int c = 0; c < 3 && c < int(e.size()); ++c) p.expr[c] = e[size_t(c)].str();
+        }
+        byOldName[jn.get("name").str()] = n;
+        created.push_back({n, &jn});
+    }
+    std::vector<Node*> result;
+    for (auto& [n, jn] : created) {
+        const Json& ins = jn->get("inputs");
+        for (size_t i = 0; i < ins.size() && i < n->inputs.size(); ++i) {
+            if (ins[i].isNull()) continue;
+            auto it = byOldName.find(ins[i].str());
+            if (it != byOldName.end()) connect(it->second, n, int(i));
+        }
+        result.push_back(n);
+    }
+    if (warningsOut) *warningsOut += warnings;
+    return result;
+}
+
+Json Graph::nodesToJson(const std::vector<const Node*>& subset) const {
+    Json all = toJson().get("nodes");
+    Json out = Json::array();
+    for (auto& jn : all.items())
+        for (const Node* n : subset)
+            if (n && n->name() == jn.get("name").str()) { out.push(jn); break; }
+    return out;
+}
+
 bool Graph::fromJson(const Json& j, std::string* error) {
     if (!j.isObject() || j.get("format").str() != "hd-graph") {
         if (error) *error = "not an HD graph file";
@@ -420,35 +470,8 @@ bool Graph::fromJson(const Json& j, std::string* error) {
             render.camYaw = float(c[3].num()); render.camPitch = float(c[4].num()); render.camDist = float(c[5].num()); render.camFov = float(c[6].num());
         }
     }
-    const Json& nodes = j.get("nodes");
-    std::vector<std::pair<Node*, const Json*>> created;
     std::string warnings;
-    for (auto& jn : nodes.items()) {
-        Node* n = createNode(jn.get("type").str(), float(jn.get("x").num()), float(jn.get("y").num()), jn.get("name").str());
-        if (!n) { warnings += "unknown node type '" + jn.get("type").str() + "'; "; continue; }
-        n->bypass = jn.get("bypass").boolean();
-        n->comment = jn.get("comment").str();
-        const Json& parms = jn.get("parms");
-        for (auto& p : n->parms()) {
-            const ParmDef& d = *p.def;
-            if (!parms.has(d.name)) continue;
-            const Json& v = parms.get(d.name);
-            if (d.type == ParmType::String || d.type == ParmType::Code || d.type == ParmType::File) {
-                p.str = v.str();
-                continue;
-            }
-            if (v.isArray()) for (int c = 0; c < 3 && c < int(v.size()); ++c) p.val[c] = float(v[size_t(c)].num());
-            else p.val[0] = float(v.num());
-            const Json& e = parms.get(d.name + ".expr");
-            for (int c = 0; c < 3 && c < int(e.size()); ++c) p.expr[c] = e[size_t(c)].str();
-        }
-        created.push_back({n, &jn});
-    }
-    for (auto& [n, jn] : created) {
-        const Json& ins = jn->get("inputs");
-        for (size_t i = 0; i < ins.size() && i < n->inputs.size(); ++i)
-            if (!ins[i].isNull()) connect(findNode(ins[i].str()), n, int(i));
-    }
+    addNodesFromJson(j.get("nodes"), 0, 0, &warnings);
     display_ = findNode(j.get("display").str());
     if (!display_ && !nodes_.empty()) display_ = nodes_.back().get();
     if (error && !warnings.empty()) *error = warnings;

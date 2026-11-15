@@ -104,6 +104,7 @@ if(HD_BUILD_APP)
     src/app/App.cpp
     src/app/NetworkEditor.cpp
     src/app/ParmPane.cpp
+    src/app/Menus.cpp
     src/app/Panels.cpp
     src/app/RenderView.cpp
     src/app/Theme.cpp
