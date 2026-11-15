@@ -13,7 +13,14 @@ void App::startRender() {
     net().cook(d);
     if (!d->error().empty()) { status("Cannot render: " + d->name() + " has an error", true); return; }
     syncCameraToScene();
-    tracer_.start(d->geometry(), graph.render);
+    RenderSettings rs = graph.render;
+    for (auto& cam : collectCameras(graph, graph.frame)) {
+        if (cam.name != rs.cameraName) continue; // rendering through a camera node: its position, lens and resolution
+        rs.useEye = true; rs.camEye = cam.eye; rs.camTarget = cam.eye + cam.fwd;
+        rs.width = cam.resx; rs.height = cam.resy;
+        rs.camFov = cam.fovYDegrees();
+    }
+    tracer_.start(d->geometry(), rs, collectLights(graph, graph.frame));
 }
 
 void App::stepSequence() {
@@ -92,11 +99,15 @@ void App::drawRenderView() {
     }
     ImGui::SameLine();
     static const int sizes[][2] = {{640, 360}, {960, 540}, {1280, 720}, {1920, 1080}, {1080, 1080}, {1080, 1920}};
-    char cur[32];
+    char cur[48];
     std::snprintf(cur, sizeof cur, "%d x %d", rs.width, rs.height);
-    ImGui::SetNextItemWidth(120);
+    bool fromCamera = false;
+    for (auto& cam : collectCameras(graph, graph.frame))
+        if (cam.name == rs.cameraName) { std::snprintf(cur, sizeof cur, "%d x %d (%s)", cam.resx, cam.resy, cam.name.c_str()); fromCamera = true; }
+    ImGui::SetNextItemWidth(fromCamera ? 190.f : 120.f);
     ImGui::BeginDisabled(busy);
     if (ImGui::BeginCombo("##size", cur)) {
+        if (fromCamera) ImGui::TextDisabled("Size comes from the camera node.\nThese apply when no camera is active:");
         for (auto& sz : sizes) {
             char label[32];
             std::snprintf(label, sizeof label, "%d x %d", sz[0], sz[1]);

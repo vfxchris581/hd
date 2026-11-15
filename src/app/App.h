@@ -1,4 +1,5 @@
 #pragma once
+#include "core/Lights.h"
 #include "core/Node.h"
 #include "core/PathTracer.h"
 #include "render/Renderer.h"
@@ -86,6 +87,16 @@ public:
     void installAsset(const std::string& path);
     void drawAssetManager();
     bool showAssetManager = false;
+    // shelf, lights and cameras (Shelf.cpp)
+    void drawShelf();
+    void shelfTool(const std::string& tool);
+    void updateSceneCamera(bool navigated, float viewAspect); // look-through / lock handling
+    void updateGuides();
+    Node* activeCameraNode();
+    bool showShelf = true;
+    bool lockCamera = false;
+    float activeCamAspect = 0; // > 0 while looking through a camera node
+    bool camEditActive_ = false;
     void select(Node* n, bool additive = false);
     void clearSelection() { selection.clear(); currentId = -1; }
 

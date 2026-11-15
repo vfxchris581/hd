@@ -20,6 +20,7 @@ add_library(hd_core STATIC
   src/core/GeoIO.cpp
   src/core/Geometry.cpp
   src/core/Json.cpp
+  src/core/Lights.cpp
   src/core/Node.cpp
   src/core/Nodes.cpp
   src/core/Noise.cpp
@@ -108,6 +109,7 @@ if(HD_BUILD_APP)
     src/app/Menus.cpp
     src/app/Panels.cpp
     src/app/RenderView.cpp
+    src/app/Shelf.cpp
     src/app/Theme.cpp
   )
   target_link_libraries(hd_app PUBLIC hd_render imgui glfw)

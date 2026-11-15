@@ -1,5 +1,6 @@
 #pragma once
 #include "Math.h"
+#include <string>
 
 namespace hd {
 
@@ -21,7 +22,14 @@ struct RenderSettings {
     Vec3 camTarget{0, 0, 0};
     float camYaw = 45.f, camPitch = 25.f, camDist = 8.f, camFov = 45.f;
 
+    // Name of the camera node to look through and render from ("" = the free perspective view).
+    std::string cameraName;
+    // Set by the app when rendering through a camera node (not saved).
+    bool useEye = false;
+    Vec3 camEye{0, 0, 0};
+
     Vec3 eye() const {
+        if (useEye) return camEye;
         float p = radians(camPitch), y = radians(camYaw);
         return camTarget + Vec3(std::cos(p) * std::sin(y), std::sin(p), std::cos(p) * std::cos(y)) * camDist;
     }

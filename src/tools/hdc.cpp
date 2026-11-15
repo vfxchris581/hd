@@ -1,6 +1,7 @@
 // hdc — headless HD command line (like hbatch): cook scenes, export geometry, make demos.
 #include "core/Demo.h"
 #include "core/GeoIO.h"
+#include "core/Lights.h"
 #include "core/Node.h"
 #include "core/PathTracer.h"
 #include <cstdio>
@@ -15,7 +16,7 @@ static void usage() {
         "  hdc info   <scene.hdg> [--frame N]            list nodes and cook stats\n"
         "  hdc cook   <scene.hdg> <out.obj|out.ply> [--node NAME] [--frame N]\n"
         "  hdc frames <scene.hdg> <out_$F.obj> <start> <end> [--node NAME]   export a sequence\n"
-        "  hdc render <scene.hdg> <out.png> [--frame N | --frames A B] [--samples N] [--size W H] [--node NAME]\n"
+        "  hdc render <scene.hdg> <out.png> [--frame N | --frames A B] [--samples N] [--size W H] [--node NAME] [--camera NAME]\n"
         "             path-trace the scene (a sequence writes out.0001.png, out.0002.png, ...)\n"
         "  hdc demo   <name> <out.hdg>                   write a demo scene\n"
         "  hdc demos                                     list demo scenes\n"
@@ -80,7 +81,20 @@ int main(int argc, char** argv) {
                 r.camTarget = (mn + mx) * 0.5f;
                 r.camDist = std::max(length(mx - mn) * 0.5f, 0.05f) / std::sin(radians(r.camFov) * 0.5f) * 1.1f;
             }
-            pt.start(target->geometry(), r);
+            // camera node: --camera NAME, else the one saved with the scene
+            std::string camName = r.cameraName;
+            if (const char* cn = opt(argc, argv, "--camera")) camName = cn;
+            bool sizeGiven = false;
+            for (int i = 1; i < argc; ++i) sizeGiven |= !std::strcmp(argv[i], "--size");
+            for (auto& cam : collectCameras(g, g.frame)) {
+                if (cam.name != camName) continue;
+                r.useEye = true; r.camEye = cam.eye; r.camTarget = cam.eye + cam.fwd;
+                if (!sizeGiven) { r.width = cam.resx; r.height = cam.resy; }
+                SceneCamera fitted = cam;
+                fitted.resx = r.width; fitted.resy = r.height;
+                r.camFov = fitted.fovYDegrees();
+            }
+            pt.start(target->geometry(), r, collectLights(g, g.frame));
             pt.wait();
             std::vector<uint8_t> img; int w = 0, h = 0; uint64_t ver = 0;
             pt.fetch(img, w, h, ver);

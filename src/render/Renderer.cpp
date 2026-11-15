@@ -314,7 +314,7 @@ void Renderer::shutdown() {
     if (depthTex_) glDeleteTextures(1, &depthTex_);
     if (volFbo_) glDeleteFramebuffers(1, &volFbo_);
     depthTex_ = volFbo_ = 0;
-    for (Batch* b : {&tris_, &wire_, &curves_, &points_, &loose_, &normals_, &grid_, &cube_}) {
+    for (Batch* b : {&tris_, &wire_, &curves_, &points_, &loose_, &normals_, &grid_, &cube_, &guides_}) {
         if (b->vbo) glDeleteBuffers(1, &b->vbo);
         if (b->vao) glDeleteVertexArrays(1, &b->vao);
         *b = Batch();
@@ -345,6 +345,13 @@ void Renderer::upload(Batch& b, const std::vector<float>& data, int fpv, const i
     }
     glBindVertexArray(0);
     b.count = int(data.size() / size_t(fpv));
+}
+
+void Renderer::setGuides(const std::vector<float>& lines) {
+    if (!inited_ || lines == guideData_) return;
+    guideData_ = lines;
+    const int lineLayout[2] = {3, 3};
+    upload(guides_, lines, 6, lineLayout, 2);
 }
 
 void Renderer::clearGeometry() {
@@ -621,6 +628,7 @@ unsigned Renderer::render(int w, int h, const Camera& cam, const ViewOptions& op
     glUniform4f(ovr, 0, 0, 0, 0);
     drawBatch(curves_, GL_LINES);
     if (opt.normals) drawBatch(normals_, GL_LINES);
+    drawBatch(guides_, GL_LINES);
 
     // points: loose points always (world-sized when pscale exists), all points on request
     if (opt.points || loose_.count) {

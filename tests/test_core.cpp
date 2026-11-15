@@ -2,6 +2,7 @@
 #include "core/Demo.h"
 #include "core/Expr.h"
 #include "core/GeoIO.h"
+#include "core/Lights.h"
 #include "core/Node.h"
 #include "core/Ops.h"
 #include "core/PathTracer.h"
@@ -801,6 +802,84 @@ TEST(render_and_material) {
     pt.start(m->geometry(), rs);
     pt.wait();
     CHECK(pt.samplesDone() == 2);
+}
+
+TEST(lights_and_cameras) {
+    Graph g;
+    Node* box = g.createNode("box");
+    Node* floor = g.createNode("grid");
+    floor->parm("t")->val[1] = -0.5f;
+    Node* m = g.createNode("merge");
+    g.connect(box, m, 0); g.connect(floor, m, 1);
+    g.cook(m);
+    CHECK(collectLights(g, 1).empty() && collectCameras(g, 1).empty());
+    // light nodes are part of the scene without being wired in
+    Node* spot = g.createNode("spotlight");
+    Vec3 p(3, 4, 3);
+    for (int c = 0; c < 3; ++c) spot->parm("t")->val[c] = p[c];
+    Vec3 r = aimRotation(p, Vec3(0));
+    spot->parm("r")->val[0] = r.x; spot->parm("r")->val[1] = r.y;
+    spot->parm("light_exposure")->val[0] = 1;
+    g.cook(spot);
+    CHECK(spot->error().empty() && spot->geometry().empty());
+    auto ls = collectLights(g, 1);
+    CHECK(ls.size() == 1 && ls[0].type == Light::Spot);
+    if (ls.size() == 1) {
+        NEAR(ls[0].intensity, 80); // 40 doubled by +1 exposure
+        Vec3 want = normalize(Vec3(0) - p);
+        CHECK(length(ls[0].dir - want) < 1e-4f); // aimed at the origin
+    }
+    spot->bypass = true;
+    CHECK(collectLights(g, 1).empty()); // bypass = off
+    spot->bypass = false;
+    // animated light
+    Node* pt = g.createNode("pointlight");
+    pt->parm("t")->expr[0] = "$F";
+    CHECK(collectLights(g, 12).size() == 2);
+    NEAR(collectLights(g, 12)[1].pos.x, 12);
+    // camera: lens and aim
+    Node* cam = g.createNode("camera");
+    for (int c = 0; c < 3; ++c) cam->parm("t")->val[c] = Vec3(0, 1, 6)[c];
+    Vec3 cr = aimRotation(Vec3(0, 1, 6), Vec3(0));
+    cam->parm("r")->val[0] = cr.x; cam->parm("r")->val[1] = cr.y;
+    auto cams = collectCameras(g, 1);
+    CHECK(cams.size() == 1);
+    if (cams.size() == 1) {
+        CHECK(length(cams[0].fwd - normalize(Vec3(0, -1, -6))) < 1e-4f);
+        NEAR(cams[0].fovYDegrees(), 2 * std::atan(41.4214 / 100.0 / (1280.0 / 720.0)) * 180 / 3.14159265);
+    }
+    // rendering: a spot light lights the box but not a far corner; no lights at all = default sun and sky
+    RenderSettings rs;
+    rs.width = 64; rs.height = 48; rs.samples = 8;
+    rs.useEye = true; rs.camEye = Vec3(0, 1, 6); rs.camTarget = Vec3(0, 0, 0); rs.camFov = 40;
+    auto render = [&](const std::vector<Light>& lights) {
+        PathTracer ptr;
+        ptr.start(m->geometry(), rs, lights);
+        ptr.wait();
+        std::vector<uint8_t> img; int w, h; uint64_t v = 0;
+        ptr.fetch(img, w, h, v);
+        return img;
+    };
+    auto lum = [](const std::vector<uint8_t>& img, int x, int y) { size_t i = (size_t(y) * 64 + size_t(x)) * 4; return int(img[i]) + img[i + 1] + img[i + 2]; };
+    std::vector<Light> one = {collectLights(g, 1)[0]};
+    one[0].coneAngle = 25; one[0].coneDelta = 5;
+    auto lit = render(one);
+    auto def = render({});
+    CHECK(lit.size() == 64u * 48u * 4u && def.size() == lit.size());
+    if (lit.size() == 64u * 48u * 4u) {
+        CHECK(lum(lit, 32, 24) > 60);                       // the box, inside the cone
+        CHECK(lum(lit, 32, 24) > lum(lit, 3, 36) + 40);     // floor far outside the cone is dark (no sky either)
+        CHECK(lum(def, 3, 36) > lum(lit, 3, 36) + 40);      // the default sky lights that same floor
+    }
+    // an environment light alone lights everything softly
+    Light env; env.type = Light::Env; env.sky = false; env.intensity = 1;
+    auto amb = render({env});
+    if (amb.size() == lit.size()) CHECK(lum(amb, 3, 36) > 60);
+    // the active camera name is saved with the scene
+    g.render.cameraName = cam->name();
+    Graph g2;
+    CHECK(g2.fromJson(Json::parse(g.toJson().dump())));
+    CHECK(g2.render.cameraName == cam->name() && collectLights(g2, 1).size() == 2 && collectCameras(g2, 1).size() == 1);
 }
 
 TEST(demo_scenes_cook_cleanly) {

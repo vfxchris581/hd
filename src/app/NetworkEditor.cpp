@@ -20,6 +20,7 @@ ImU32 categoryColor(const std::string& cat) {
     if (cat == "Utility") return IM_COL32(88, 90, 96, 255);
     if (cat == "Simulation") return IM_COL32(150, 70, 78, 255);
     if (cat == "Volumes") return IM_COL32(120, 96, 140, 255);
+    if (cat == "Lights and Cameras") return IM_COL32(150, 132, 52, 255);
     return IM_COL32(78, 92, 112, 255); // Modifiers
 }
 
@@ -491,7 +492,7 @@ void NetworkEditor::drawNodeMenu(App& app) {
     if (ImGui::IsItemEdited()) menuHighlight_ = 0;
 
     std::vector<const NodeType*> matches;
-    static const char* cats[] = {"Generators", "Modifiers", "Deformers", "Attributes", "Points", "Volumes", "Simulation", "Utility"};
+    static const char* cats[] = {"Generators", "Modifiers", "Deformers", "Attributes", "Points", "Volumes", "Simulation", "Lights and Cameras", "Utility"};
     for (const char* cat : cats)
         for (auto& t : nodeTypes())
             if (t.category == cat && (icontains(t.label, search_) || icontains(t.name, search_))) matches.push_back(&t);

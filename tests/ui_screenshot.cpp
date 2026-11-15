@@ -115,7 +115,25 @@ int main(int argc, char** argv) {
     app.frameGeometry();
     for (int i = 0; i < 3; ++i) runFrame();
     savePPM(prefix + "_1.ppm", W, H);
-    if (argc > 5 && std::string(argv[5]) == "subnet") { // collapse, dive in, save as asset
+    if (argc > 5 && std::string(argv[5]) == "lights") { // shelf tools: lights and a camera, then render
+        app.shelfTool("spotlight");
+        app.shelfTool("pointlight");
+        if (hd::Node* pl = app.graph.findNode("pointlight1")) { pl->parm("light_color")->val[0] = 0.3f; pl->parm("light_color")->val[1] = 0.5f; pl->parm("light_color")->val[2] = 1.0f; }
+        app.shelfTool("ambientlight");
+        app.network.requestFrameAll();
+        for (int i = 0; i < 6; ++i) runFrame();
+        savePPM(prefix + "_lights.ppm", W, H);
+        app.shelfTool("camera");
+        for (int i = 0; i < 4; ++i) runFrame();
+        std::printf("camera=%s lights=%zu aspect=%.3f\n", app.graph.render.cameraName.c_str(), hd::collectLights(app.graph, 1).size(), double(app.activeCamAspect));
+        savePPM(prefix + "_camera.ppm", W, H);
+        app.graph.render.samples = 64;
+        app.startRender();
+        ImGui::SetWindowFocus("Render View");
+        while (app.rendering()) { runFrame(); std::this_thread::sleep_for(std::chrono::milliseconds(50)); }
+        for (int i = 0; i < 3; ++i) runFrame();
+        savePPM(prefix + "_lit.ppm", W, H);
+    } else if (argc > 5 && std::string(argv[5]) == "subnet") { // collapse, dive in, save as asset
         app.clearSelection();
         for (const char* nm : {"rock", "rock_noise", "rock_color"})
             if (hd::Node* n = app.net().findNode(nm)) app.select(n, true);

@@ -496,6 +496,7 @@ Json Graph::toJson() const {
         j["sunIntensity"] = double(r.sunIntensity); j["skyIntensity"] = double(r.skyIntensity);
         j["exposure"] = double(r.exposure); j["curveWidth"] = double(r.curveWidth);
         j["ground"] = r.ground; j["groundY"] = double(r.groundY);
+        if (!r.cameraName.empty()) j["cameraNode"] = r.cameraName;
         if (r.hasCamera) {
             Json c = Json::array();
             for (float v : {r.camTarget.x, r.camTarget.y, r.camTarget.z, r.camYaw, r.camPitch, r.camDist, r.camFov}) c.push(double(v));
@@ -617,6 +618,7 @@ bool Graph::fromJson(const Json& j, std::string* error) {
         render.sunIntensity = float(r.get("sunIntensity").num(d.sunIntensity)); render.skyIntensity = float(r.get("skyIntensity").num(d.skyIntensity));
         render.exposure = float(r.get("exposure").num(d.exposure)); render.curveWidth = float(r.get("curveWidth").num(d.curveWidth));
         render.ground = r.get("ground").boolean(d.ground); render.groundY = float(r.get("groundY").num(d.groundY));
+        render.cameraName = r.get("cameraNode").str();
         const Json& c = r.get("camera");
         if (c.size() == 7) {
             render.hasCamera = true;

@@ -64,7 +64,9 @@ struct Scene {
     std::vector<BvhNode> nodes;
     std::vector<Volume> vols;
     RenderSettings set;
-    Vec3 sunDir;
+    std::vector<Light> lights; // never empty of intent: defaults to the settings' sun + sky
+    const Light* env = nullptr;
+    Vec3 envAmbient{0, 0, 0};
 
     // ------------------------------------------------------------ build
     void addTube(const Vec3& a, const Vec3& b, float r, const Vec3& ca, const Vec3& cb, const Material& m) {
@@ -87,10 +89,29 @@ struct Scene {
         }
     }
 
-    void build(const Geometry& g, const RenderSettings& s) {
+    void build(const Geometry& g, const RenderSettings& s, const std::vector<Light>& userLights) {
         set = s;
-        float az = radians(s.sunAzimuth), el = radians(s.sunElevation);
-        sunDir = normalize(Vec3(std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)));
+        lights = userLights;
+        if (lights.empty()) { // no light nodes in the scene: default sun and sky
+            float az = radians(s.sunAzimuth), el = radians(s.sunElevation);
+            Light sun;
+            sun.type = Light::Distant;
+            sun.dir = -normalize(Vec3(std::cos(el) * std::sin(az), std::sin(el), std::cos(el) * std::cos(az)));
+            sun.color = Vec3(1.f, 0.96f, 0.9f);
+            sun.intensity = s.sunIntensity;
+            sun.angle = 1.15f;
+            Light sky;
+            sky.type = Light::Env;
+            sky.intensity = s.skyIntensity;
+            if (sun.intensity > 0) lights.push_back(sun);
+            if (sky.intensity > 0) lights.push_back(sky);
+        }
+        for (auto& l : lights)
+            if (l.type == Light::Env) {
+                env = &l;
+                envAmbient = (l.sky ? Vec3(0.55f, 0.65f, 0.85f) : Vec3(1)) * l.color * (0.5f * l.intensity);
+                break;
+            }
         for (auto& v : g.volumes)
             if (v.density && v.density->size() == v.voxels() && v.voxels() > 0) vols.push_back(v);
 
@@ -332,8 +353,7 @@ struct Scene {
     // Single scattering + emission along a camera/bounce ray segment.
     void march(const Ray& r, float tmax, Rng& rng, Vec3& L, float& T) const {
         L = Vec3(0); T = 1;
-        const Vec3 sunE = Vec3(1.f, 0.96f, 0.9f) * set.sunIntensity;
-        const Vec3 amb = Vec3(0.55f, 0.65f, 0.85f) * (0.5f * set.skyIntensity);
+        const Vec3 amb = envAmbient;
         for (auto& v : vols) {
             float t0, t1;
             if (!boxRange(v, r, tmax, t0, t1)) continue;
@@ -346,11 +366,17 @@ struct Scene {
                 float d = sampleField(v, *v.density, p);
                 if (d > 0.003f) {
                     float a = 1.f - std::exp(-d * v.densityScale * step * kExt);
-                    // light reaching this point through the volume
-                    float sum = 0, ls = v.dx * 1.5f;
-                    for (int k = 1; k <= 10; ++k) sum += sampleField(v, *v.density, p + sunDir * (ls * float(k)));
-                    float Ts = std::exp(-sum * ls * kExt * v.densityScale * 0.7f);
-                    L += albedo * (sunE * (Ts * 0.32f) + amb) * (T * a);
+                    // light reaching this point through the volume, from every light
+                    Vec3 lit = amb;
+                    const float ls = v.dx * 1.5f;
+                    for (auto& l : lights) {
+                        Vec3 wi, E; float dist;
+                        if (!sampleLight(l, p, rng, wi, dist, E)) continue;
+                        float sum = 0;
+                        for (int k = 1; k <= 8 && ls * float(k) < dist; ++k) sum += sampleField(v, *v.density, p + wi * (ls * float(k)));
+                        lit += E * (std::exp(-sum * ls * kExt * v.densityScale * 0.7f) * 0.32f);
+                    }
+                    L += albedo * lit * (T * a);
                     T *= 1.f - a;
                 }
                 if (hasHeat) {
@@ -361,17 +387,70 @@ struct Scene {
         }
     }
 
+    // ------------------------------------------------------------ lights
+    // Picks a point on the light as seen from P. Returns false if the light cannot reach P.
+    // wi: direction to the light, dist: distance to it, E: light arriving (before the surface's response).
+    bool sampleLight(const Light& l, const Vec3& P, Rng& rng, Vec3& wi, float& dist, Vec3& E) const {
+        switch (l.type) {
+        case Light::Env: return false; // reached by bounced rays instead
+        case Light::Distant: {
+            Vec3 t, b, toL = -l.dir;
+            basis(toL, t, b);
+            float a = 2 * kPi * rng.next(), rr = radians(l.angle) * std::sqrt(rng.next());
+            wi = normalize(toL + t * (std::cos(a) * rr) + b * (std::sin(a) * rr));
+            dist = 1e30f;
+            E = l.color * l.intensity;
+            return true;
+        }
+        case Light::Point:
+        case Light::Spot: {
+            Vec3 lp = l.pos;
+            if (l.radius > 0) {
+                float z = rng.next() * 2 - 1, a = rng.next() * 2 * kPi, r = std::sqrt(std::max(0.f, 1 - z * z));
+                lp += Vec3(r * std::cos(a), z, r * std::sin(a)) * (l.radius * std::cbrt(rng.next()));
+            }
+            Vec3 d = lp - P;
+            dist = length(d);
+            if (dist < 1e-5f) return false;
+            wi = d / dist;
+            E = l.color * (l.intensity / std::max(dist * dist, 1e-4f));
+            if (l.type == Light::Spot) {
+                float c = dot(-wi, l.dir);
+                float inner = std::cos(radians(l.coneAngle * 0.5f)), outer = std::cos(radians(std::min(179.f, l.coneAngle * 0.5f + l.coneDelta)));
+                float f = inner > outer ? std::clamp((c - outer) / (inner - outer), 0.f, 1.f) : (c >= inner ? 1.f : 0.f);
+                f = f * f * (3 - 2 * f);
+                if (f <= 0) return false;
+                E *= f;
+            }
+            return true;
+        }
+        case Light::Area: {
+            Vec3 lp = l.pos + l.ux * ((rng.next() - 0.5f) * l.sizeX) + l.uy * ((rng.next() - 0.5f) * l.sizeY);
+            Vec3 d = lp - P;
+            dist = length(d);
+            if (dist < 1e-5f) return false;
+            wi = d / dist;
+            float cosL = dot(-wi, l.dir);
+            if (cosL <= 0) return false; // behind the panel
+            E = l.color * (l.intensity * cosL / std::max(dist * dist, 1e-4f));
+            return true;
+        }
+        }
+        return false;
+    }
+
     // ------------------------------------------------------------ shading
     Vec3 sky(const Vec3& d) const {
+        if (!env) return Vec3(0);
+        if (!env->sky) return env->color * env->intensity;
         const Vec3 horizon(0.85f, 0.88f, 0.93f), zenith(0.36f, 0.50f, 0.80f), below(0.22f, 0.21f, 0.20f);
         Vec3 c = d.y >= 0 ? lerp(horizon, zenith, std::sqrt(std::min(1.f, d.y))) : lerp(horizon, below, std::min(1.f, -d.y * 5.f));
-        return c * set.skyIntensity;
+        return c * env->color * env->intensity;
     }
 
     // screenV: 0 at the bottom of the image, 1 at the top (for the backdrop gradient)
     Vec3 radiance(Ray ray, Rng& rng, float screenV) const {
         Vec3 L(0), beta(1);
-        const Vec3 sunE = Vec3(1.f, 0.96f, 0.9f) * set.sunIntensity;
         for (int bounce = 0; bounce <= set.bounces; ++bounce) {
             Hit h;
             bool hit = intersect(ray, h, false);
@@ -427,23 +506,20 @@ struct Scene {
             const Vec3 diff = m.base * (1.f - m.metal);
             Vec3 origin = pos + n * 1e-4f * std::max(1.f, h.t);
 
-            // direct sunlight (slightly soft shadows)
-            {
-                Vec3 t, b;
-                basis(sunDir, t, b);
-                float a = 2 * kPi * rng.next(), rr = 0.02f * std::sqrt(rng.next());
-                Vec3 sd = normalize(sunDir + t * (std::cos(a) * rr) + b * (std::sin(a) * rr));
-                float ndl = dot(n, sd);
-                if (ndl > 0) {
-                    Ray sr{origin, sd};
-                    Hit sh;
-                    if (!intersect(sr, sh, true)) {
-                        float Ts = vols.empty() ? 1.f : transmittance(sr, 1e30f, rng);
-                        float spec = (np + 2.f) / (2 * kPi) * std::pow(std::max(dot(R, sd), 0.f), np);
-                        spec = std::min(spec, 40.f);
-                        L += beta * sunE * (diff * (1.f / kPi) + F0 * spec) * (ndl * Ts);
-                    }
-                }
+            // direct light from every light, one shadow ray each
+            for (auto& l : lights) {
+                Vec3 wi, E; float dist;
+                if (!sampleLight(l, pos, rng, wi, dist, E)) continue;
+                float ndl = dot(n, wi);
+                if (ndl <= 0) continue;
+                Ray sr{origin, wi};
+                Hit sh;
+                sh.t = dist < 1e29f ? dist * 0.999f : 1e30f;
+                if (intersect(sr, sh, true)) continue;
+                float Ts = vols.empty() ? 1.f : transmittance(sr, dist, rng);
+                float spec = (np + 2.f) / (2 * kPi) * std::pow(std::max(dot(R, wi), 0.f), np);
+                spec = std::min(spec, 40.f);
+                L += beta * E * (diff * (1.f / kPi) + F0 * spec) * (ndl * Ts);
             }
 
             // choose the next direction
@@ -550,7 +626,7 @@ struct PathTracer::Impl {
 PathTracer::PathTracer() : impl_(new Impl()) {}
 PathTracer::~PathTracer() { stop(); }
 
-void PathTracer::start(const Geometry& geo, const RenderSettings& settings) {
+void PathTracer::start(const Geometry& geo, const RenderSettings& settings, const std::vector<Light>& lights) {
     stop();
     RenderSettings s = settings;
     s.width = std::clamp(s.width, 16, 4096);
@@ -558,7 +634,7 @@ void PathTracer::start(const Geometry& geo, const RenderSettings& settings) {
     s.samples = std::clamp(s.samples, 1, 100000);
     s.bounces = std::clamp(s.bounces, 0, 16);
     auto scene = std::make_shared<Scene>();
-    scene->build(geo, s);
+    scene->build(geo, s, lights);
     impl_->cancel = false;
     impl_->done = 0;
     impl_->target = s.samples;

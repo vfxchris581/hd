@@ -400,6 +400,8 @@ void App::frame() {
     if (!layoutBuilt_) {
         layoutBuilt_ = true;
         ImGuiDockNode* node = ImGui::DockBuilderGetNode(dockId);
+        // layouts saved by older versions have no shelf: rebuild so it gets its place
+        if (!ImGui::FindWindowSettingsByID(ImHashStr("Shelf"))) forceLayout_ = true;
         if (forceLayout_ || !node || node->IsLeafNode()) buildDefaultLayout(dockId);
         forceLayout_ = false;
         focusSceneView_ = 3;
@@ -410,6 +412,8 @@ void App::frame() {
     handleGlobalShortcuts();
     cookDisplay();
     drawMenuBar();
+    if (showShelf) drawShelf();
+    updateGuides();
     if (showSceneView) drawViewport();
     if (showNetwork) network.draw(*this);
     if (showParms) drawParameters();
@@ -447,6 +451,10 @@ void App::buildDefaultLayout(unsigned dockIdIn) {
     ImGui::DockBuilderRemoveNode(dockId);
     ImGui::DockBuilderAddNode(dockId, ImGuiDockNodeFlags_DockSpace);
     ImGui::DockBuilderSetNodeSize(dockId, ImGui::GetMainViewport()->WorkSize);
+    ImGuiID shelf = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Up, 0.07f, nullptr, &dockId);
+    ImGui::DockBuilderSetNodeSize(shelf, ImVec2(ImGui::GetMainViewport()->WorkSize.x, ImGui::GetFrameHeight() * 2.1f + ImGui::GetStyle().WindowPadding.y * 2));
+    ImGui::DockBuilderDockWindow("Shelf", shelf);
+    if (ImGuiDockNode* sh = ImGui::DockBuilderGetNode(shelf)) sh->LocalFlags |= ImGuiDockNodeFlags_NoTabBar;
     ImGuiID bottom = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Down, 0.05f, nullptr, &dockId);
     ImGui::DockBuilderSetNodeSize(bottom, ImVec2(ImGui::GetMainViewport()->WorkSize.x, ImGui::GetFrameHeight() + ImGui::GetStyle().WindowPadding.y * 2 + 2));
     ImGuiID right = ImGui::DockBuilderSplitNode(dockId, ImGuiDir_Right, 0.42f, nullptr, &dockId);

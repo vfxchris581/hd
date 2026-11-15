@@ -9,13 +9,14 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 ## Features
 
 - **Network editor.** Nodes flow top to bottom as in Houdini. Press **Tab** (or right-click) to open a searchable node menu. Drag from an output to an input to connect; drag a wire onto empty space to add a node that's already connected. The **blue flag** sets the display node and the **yellow flag** bypasses a node. Also: box select, duplicate, rename, error badges and per-node cook stats.
-- **37 nodes**:
+- **43 nodes**:
   - Generators: Box, Sphere, Grid, Tube, Torus, Circle, Line, File (OBJ)
   - Modifiers: Transform, Merge, Subdivide (Catmull-Clark), PolyExtrude, Fuse, Facet, Reverse, Blast, PolyWire
   - Deformers: Mountain (fractal noise), Smooth, Peak, Point Jitter
   - Points: Scatter (area weighted), Copy to Points (orients to `N`/`up`, scales by `pscale`/`scale`, transfers `Cd`)
   - Attributes: Attribute Wrangle, Attribute Create, Color, Normal, Material
   - Utility: Null, Switch, Subnetwork, Subnet Input, Output
+  - Lights and Cameras: Camera, Point Light, Spot Light, Area Light, Distant Light, Environment Light
   - Simulation: POP Solver, Trail, Pyro Solver
   - Volumes: Fog Volume
 - **VEX-lite.** A small snippet language for Attribute Wrangle, expression groups and parameter expressions. It supports `@P`, `@N`, `@Cd`, `v@foo`/`f@foo`, `@ptnum`, `@Time`, `@Frame`, `if`/`for`, vector math, `noise`, `curlnoise`, `rand`, `fit`, `hsvtorgb` and more.
@@ -25,6 +26,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 - **Animation.** Right-click any parameter and choose **Add Expression** (e.g. `sin($T*2)`, `$F*1.5`). Nodes that depend on time recook during playback; everything else stays cached.
 - **Groups.** Group fields take `0-10 15 20-40:2`, an expression such as `@P.y > 0`, and `!` to invert.
 - **Viewport.** Smooth-shaded surfaces with wireframe overlay, points (sized by `pscale` for point clouds), normals, point and primitive numbers, a ground grid and an axis gizmo. Rendering uses 4× MSAA.
+- **Shelf.** A row of tool tabs across the top, as in Houdini: **Create**, **Modify**, **Lights and Cameras**, **Particles** and **Pyro FX**. Clicking a tool adds the node, continuing from the selected node when the tool takes an input.
+- **Lights and cameras.** Camera, Point, Spot, Area, Distant and Environment lights, plus Sky Light (sun and sky) and Ambient Light on the shelf. They are scene-level nodes, like Houdini objects: every light or camera in the top-level network is part of the scene without being wired in, and bypassing one turns it off. Shelf lights are placed and aimed at whatever is displayed. Lights show as icons in the viewport and light the Render View (not the viewport's own shading); once a scene has any light, the default sun and sky are no longer used. Pick a camera from the Scene View's camera menu to look through it; **Lock** makes view navigation move the camera, and the Render View renders through the active camera at its resolution. **Camera** on the shelf creates one from the current view. Camera roll (Z rotation) is ignored. Geometry, Volume, GI, Caustic and Portal lights and stereo/VR cameras are greyed out.
 - **Subnetworks.** Select nodes and press **Shift+C** to collapse them into a single Subnetwork node, wired in their place. Double-click it (or press **I**) to dive in and edit; **U** or the breadcrumb at the top of the Network goes back up. Outside wires arrive through Subnet Input nodes (up to 4) and the Output node is the result. Subnets nest, save with the scene, and can contain simulations.
 - **Assets.** Right-click a subnet and choose **Save As Asset** to store it in your asset folder (`~/.hd_assets`). Assets appear in the Tab menu under **Assets** in every scene, and the **Assets** menu has an Asset Manager and an installer for `.hda` files from someone else. Each asset you add is an independent copy: editing it doesn't change the saved asset or other copies, and assets don't expose parameters on the outside yet.
 - **Menus.** The menu bar follows Houdini's layout: **File** (recent files, Save and Increment, Revert, Merge, Import, Export), **Edit** (cut, copy, paste, preferences), **Render**, **Assets**, **Windows** (show or hide each pane, reset the layout) and **Help**. Entries for things HD doesn't have yet (Alembic/FBX/USD, render nodes, Python shell) are greyed out.
@@ -39,6 +42,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 ![Smoke flowing around a collider](docs/screenshot-smoke.png)
 
 ![Particle sparks with trails](docs/screenshot-sparks.png)
+
+![Lights, camera view and shelf](docs/screenshot-lights.png)
 
 ![Inside a subnet](docs/screenshot-subnet.png)
 
@@ -127,6 +132,7 @@ hdc cook examples/city.hdg city.obj         # export the display node
 hdc frames examples/ripples.hdg out_$F.obj 1 48   # export a frame sequence
 hdc render examples/smoke.hdg smoke.png --frame 90 --samples 64   # path-trace a frame
 hdc render examples/fire.hdg fire.png --frames 1 48          # fire.0001.png ...
+hdc render scene.hdg shot.png --camera camera1                # through a camera node, using the scene's lights
 hdc demo terrain my_scene.hdg               # write a demo scene
 ```
 

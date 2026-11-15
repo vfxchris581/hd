@@ -28,7 +28,7 @@ void App::drawViewport() {
     if (!open) { ImGui::End(); return; }
 
     // toolbar
-    ImGui::SetCursorPos(ImVec2(6, 4));
+    ImGui::SetCursorPos(ImVec2(6, ImGui::GetCursorPosY() + 4)); // below the tab bar
     toggleButton("Shaded", &viewOpts.shaded, "Smooth shaded surfaces");
     ImGui::SameLine(); toggleButton("Wire", &viewOpts.wireframe, "Wireframe over shaded (W)");
     ImGui::SameLine(); toggleButton("Points", &viewOpts.points, "Display points");
@@ -44,10 +44,30 @@ void App::drawViewport() {
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Ground plane, markers, background (D)");
     ImGui::SameLine(); if (ImGui::SmallButton("Home")) camera.home();
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("Home camera (H)");
+    // camera menu: look through a camera node, like Houdini's viewport camera menu
+    ImGui::SameLine(); ImGui::TextDisabled("|"); ImGui::SameLine();
+    {
+        Node* camNode = activeCameraNode();
+        std::string label = camNode ? camNode->name() : std::string("No cam");
+        if (ImGui::SmallButton((label + " v##cammenu").c_str())) ImGui::OpenPopup("##cammenu");
+        if (ImGui::IsItemHovered()) ImGui::SetTooltip("Look through a camera");
+        if (ImGui::BeginPopup("##cammenu")) {
+            if (ImGui::Selectable("No camera (perspective view)", !camNode)) graph.render.cameraName.clear();
+            ImGui::Separator();
+            for (auto& c : collectCameras(graph, graph.frame))
+                if (ImGui::Selectable(c.name.c_str(), camNode && c.name == camNode->name())) { graph.render.cameraName = c.name; markDirty(); }
+            ImGui::Separator();
+            if (ImGui::Selectable("New Camera From View")) shelfTool("camera");
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine();
+        toggleButton("Lock", &lockCamera, "Lock camera to view: moving the view moves the camera node.\nWhen off, moving the view leaves the camera.");
+    }
     ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 2);
 
     ImVec2 avail = ImGui::GetContentRegionAvail();
     if (avail.x < 8 || avail.y < 8) { ImGui::End(); return; }
+    updateSceneCamera(false, avail.x / avail.y);
     ImVec2 scale = ImGui::GetIO().DisplayFramebufferScale;
     int w = int(avail.x * scale.x), h = int(avail.y * scale.y);
     viewportW_ = avail.x; viewportH_ = avail.y;
@@ -58,15 +78,17 @@ void App::drawViewport() {
     ImGuiIO& io = ImGui::GetIO();
 
     // camera navigation (Houdini: LMB tumble, MMB pan, RMB dolly; Alt also works)
+    bool navigated = false;
     if (hovered && g_vpDrag == 0) {
         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) g_vpDrag = 1;
         else if (ImGui::IsMouseClicked(ImGuiMouseButton_Middle)) g_vpDrag = 2;
         else if (ImGui::IsMouseClicked(ImGuiMouseButton_Right)) g_vpDrag = 3;
-        if (io.MouseWheel != 0) camera.dolly(io.MouseWheel * 0.12f);
+        if (io.MouseWheel != 0) { camera.dolly(io.MouseWheel * 0.12f); navigated = true; }
         if (g_vpDrag) ImGui::SetWindowFocus();
     }
     if (g_vpDrag) {
         ImVec2 d = io.MouseDelta;
+        navigated |= d.x != 0 || d.y != 0;
         if (g_vpDrag == 1) {
             if (io.KeyShift) camera.pan(d.x, d.y, avail.y);
             else camera.tumble(d.x, d.y);
@@ -76,14 +98,27 @@ void App::drawViewport() {
             g_vpDrag = 0;
     }
     if ((hovered || ImGui::IsWindowFocused()) && !io.WantTextInput) {
-        if (ImGui::IsKeyPressed(ImGuiKey_F, false)) frameGeometry();
-        if (ImGui::IsKeyPressed(ImGuiKey_H, false)) camera.home();
+        if (ImGui::IsKeyPressed(ImGuiKey_F, false)) { frameGeometry(); navigated = true; }
+        if (ImGui::IsKeyPressed(ImGuiKey_H, false)) { camera.home(); navigated = true; }
         if (ImGui::IsKeyPressed(ImGuiKey_W, false) && !io.KeyCtrl) viewOpts.wireframe = !viewOpts.wireframe;
         if (ImGui::IsKeyPressed(ImGuiKey_D, false) && !io.KeyCtrl) showDisplayOptions = !showDisplayOptions;
     }
 
+    if (navigated) updateSceneCamera(true, avail.x / avail.y);
+
     // overlays
     ImDrawList* dl = ImGui::GetWindowDrawList();
+    if (activeCamAspect > 0) { // frame of the camera we are looking through
+        float va = avail.x / avail.y;
+        float fw = va >= activeCamAspect ? avail.y * activeCamAspect : avail.x, fh = va >= activeCamAspect ? avail.y : avail.x / activeCamAspect;
+        ImVec2 a(imgPos.x + (avail.x - fw) * 0.5f, imgPos.y + (avail.y - fh) * 0.5f), b(a.x + fw, a.y + fh);
+        ImU32 dim = IM_COL32(0, 0, 0, 110);
+        dl->AddRectFilled(imgPos, ImVec2(imgPos.x + avail.x, a.y), dim);
+        dl->AddRectFilled(ImVec2(imgPos.x, b.y), ImVec2(imgPos.x + avail.x, imgPos.y + avail.y), dim);
+        dl->AddRectFilled(ImVec2(imgPos.x, a.y), ImVec2(a.x, b.y), dim);
+        dl->AddRectFilled(ImVec2(b.x, a.y), ImVec2(imgPos.x + avail.x, b.y), dim);
+        dl->AddRect(a, b, IM_COL32(255, 215, 90, 200));
+    }
     Node* d = net().displayNode();
     ImVec2 tp(imgPos.x + 10, imgPos.y + 8);
     if (d) {

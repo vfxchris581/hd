@@ -323,13 +323,14 @@ void App::drawMenuBar() {
     if (ImGui::BeginMenu("Windows")) {
         if (ImGui::BeginMenu("Desktop")) {
             if (ImGui::MenuItem("Build (Default Layout)")) {
-                showSceneView = showNetwork = showParms = showSpreadsheet = showRenderView = showTimeline = true;
+                showShelf = showSceneView = showNetwork = showParms = showSpreadsheet = showRenderView = showTimeline = true;
                 layoutBuilt_ = false;
                 forceLayout_ = true;
             }
             ImGui::EndMenu();
         }
         ImGui::Separator();
+        ImGui::MenuItem("Shelf", nullptr, &showShelf);
         ImGui::MenuItem("Scene View", nullptr, &showSceneView);
         ImGui::MenuItem("Render View", nullptr, &showRenderView);
         ImGui::MenuItem("Network View", nullptr, &showNetwork);

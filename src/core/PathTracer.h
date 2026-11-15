@@ -1,6 +1,7 @@
 // Progressive CPU path tracer used by the Render View and `hdc render`.
 #pragma once
 #include "Geometry.h"
+#include "Lights.h"
 #include "RenderSettings.h"
 #include <cstdint>
 #include <memory>
@@ -18,7 +19,8 @@ public:
 
     // Starts rendering a snapshot of geo in the background (cancels any render in progress).
     // The camera comes from settings (eye(), camTarget, camFov).
-    void start(const Geometry& geo, const RenderSettings& settings);
+    // With no lights given, the sun and sky from the settings are used.
+    void start(const Geometry& geo, const RenderSettings& settings, const std::vector<Light>& lights = {});
     void stop();
     void wait(); // block until the current render finishes
     bool running() const;

@@ -66,6 +66,8 @@ public:
     // Upload geometry if stamp changed (stamp 0 always uploads).
     void setGeometry(const Geometry& g, uint64_t stamp);
     void clearGeometry();
+    // Extra wireframe drawn over the scene (light and camera icons): x,y,z,r,g,b per vertex, as line pairs.
+    void setGuides(const std::vector<float>& lines);
 
     // Render into the internal framebuffer (resized as needed). Returns the color texture.
     unsigned render(int width, int height, const Camera& cam, const ViewOptions& opt);
@@ -91,7 +93,8 @@ private:
         float density = 1, fire = 0, step = 0.05f;
     };
     std::vector<GpuVolume> volumes_;
-    Batch cube_;
+    Batch cube_, guides_;
+    std::vector<float> guideData_;
     unsigned progVol_ = 0, depthTex_ = 0, volFbo_ = 0;
 
     bool inited_ = false;
