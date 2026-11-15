@@ -70,8 +70,9 @@ void App::updateSceneCamera(bool navigated, float viewAspect) {
     Vec3 r = aimRotation(eye, camera.target);
     Parm* pt = cn->parm("t");
     Parm* pr = cn->parm("r");
-    pt->val[0] = eye.x; pt->val[1] = eye.y; pt->val[2] = eye.z;
-    pr->val[0] = r.x; pr->val[1] = r.y;
+    const float fr = std::floor(graph.frame + 0.5f); // on an animated camera this keys the current frame
+    pt->setValue(0, eye.x, fr); pt->setValue(1, eye.y, fr); pt->setValue(2, eye.z, fr);
+    pr->setValue(0, r.x, fr); pr->setValue(1, r.y, fr);
     cn->touch();
     markDirty();
 }

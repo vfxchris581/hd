@@ -279,6 +279,9 @@ void App::drawMenuBar() {
         ImGui::Separator();
         if (ImGui::MenuItem("Collapse Selected Into Subnet", "Shift+C", false, hasSel)) collapseSelected();
         ImGui::Separator();
+        if (ImGui::MenuItem("Set Keyframe on Animated Parameters", "K", false, hasSel)) keySelected();
+        ImGui::MenuItem("Animation Editor...", nullptr, &showAnimEditor);
+        ImGui::Separator();
         if (ImGui::BeginMenu("Preferences")) {
             if (ImGui::MenuItem("3D Viewports...", "D")) showDisplayOptions = true;
             if (ImGui::MenuItem("Rendering...")) showRenderSettings = true;
@@ -338,6 +341,7 @@ void App::drawMenuBar() {
         ImGui::MenuItem("Geometry Spreadsheet", nullptr, &showSpreadsheet);
         ImGui::MenuItem("Playbar", nullptr, &showTimeline);
         ImGui::Separator();
+        ImGui::MenuItem("Animation Editor", nullptr, &showAnimEditor);
         ImGui::MenuItem("Display Options", "D", &showDisplayOptions);
         ImGui::MenuItem("Render Settings", nullptr, &showRenderSettings);
         ImGui::Separator();

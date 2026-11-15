@@ -23,7 +23,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 - **Particles.** The POP Solver emits from any surface or point set (continuous or a single burst) and simulates frame by frame: gravity, wind, air resistance, curl-noise turbulence, ground and sphere collisions (bounce, stick or die), and color and size over life. A **POP wrangle** snippet runs every substep with `@v`, `@age`, `@life`, `@id` and `@TimeInc`. Simulated frames are cached, so scrubbing back is instant; the blue bar on the timeline shows what's cached. Changing the solver or anything upstream re-simulates. Trail turns velocities into streaks.
 - **Smoke and fire.** The Pyro Solver is a grid fluid simulation. Smoke is emitted from any closed mesh (or points), rises with buoyancy, swirls (vorticity confinement plus curl-noise turbulence), fades and cools, and flows around an optional collider mesh. Turn up **Fire Intensity** to make hot gas glow. Frames are cached like particles. Fog Volume fills a mesh with static fog. Volumes are raymarched in the viewport with self-shadowing and are correctly hidden behind solid geometry. Volumes follow Transform (move and scale, not rotate) and Merge; they aren't written by OBJ/PLY export.
 - **Render View.** A progressive path tracer renders the displayed node from the Scene View camera: sun with soft shadows, sky light, bounced light, glossy and metallic surfaces, glowing (emissive) surfaces and particles, and smoke and fire with shadows. The **Material** node sets roughness, metallic and glow per primitive or point. Sun, sky, exposure, ground plane and curve thickness are under **Settings** and are saved with the scene, along with the camera. **Save Image** writes a PNG; **Render Sequence** renders the timeline range to numbered PNGs. PNGs are written uncompressed, so they are large (about 2.7 MB at 1280 x 720).
-- **Animation.** Right-click any parameter and choose **Add Expression** (e.g. `sin($T*2)`, `$F*1.5`). Nodes that depend on time recook during playback; everything else stays cached.
+- **Keyframes.** Every numeric parameter on every node can be keyframed, including lights, cameras and simulation settings. **Alt+click** a parameter's name to set a key at the current frame; after that, changing the value on another frame sets a key there automatically. Animated fields are blue, and green when a key sits on the current frame. Keys show as marks on the timeline (green for the selected nodes, grey for the rest), **<K** / **K>** jump between them, and **K** keys all animated parameters of the selection. Right-click a parameter to remove a key, choose its curve (smooth, linear or constant) or delete the animation. **Windows → Animation Editor** lists every animated channel with its keys, which you can drag in time. With **Lock** on, moving the view while looking through an animated camera keys the camera.
+- **Expressions.** Right-click any parameter and choose **Add Expression** (e.g. `sin($T*2)`, `$F*1.5`). Nodes that depend on time recook during playback; everything else stays cached.
 - **Groups.** Group fields take `0-10 15 20-40:2`, an expression such as `@P.y > 0`, and `!` to invert.
 - **Viewport.** Smooth-shaded surfaces with wireframe overlay, points (sized by `pscale` for point clouds), normals, point and primitive numbers, a ground grid and an axis gizmo. Rendering uses 4× MSAA.
 - **Shelf.** A row of tool tabs across the top, as in Houdini: **Create**, **Modify**, **Lights and Cameras**, **Particles** and **Pyro FX**. Clicking a tool adds the node, continuing from the selected node when the tool takes an input.
@@ -42,6 +43,8 @@ So far it has the **procedural core** (geometry engine, node graph, a VEX-like s
 ![Smoke flowing around a collider](docs/screenshot-smoke.png)
 
 ![Particle sparks with trails](docs/screenshot-sparks.png)
+
+![Keyframes: timeline marks and the Animation Editor](docs/screenshot-animation.png)
 
 ![Lights, camera view and shelf](docs/screenshot-lights.png)
 
@@ -100,6 +103,9 @@ ctest --test-dir build -C Release          # core engine tests
 | | Undo / redo | Ctrl+Z / Ctrl+Shift+Z |
 | | New / open / save | Ctrl+N / Ctrl+O / Ctrl+S |
 | | Copy / cut / paste nodes | Ctrl+C / Ctrl+X / Ctrl+V |
+| | Set a keyframe | Alt+click a parameter name |
+| | Key animated parameters of the selection | K |
+| | Previous / next keyframe | Ctrl+Left / Ctrl+Right |
 
 On macOS, use Cmd wherever the table says Ctrl.
 
@@ -121,7 +127,7 @@ v@vel = curlnoise(@P * 0.5);                 // new vector attribute
 
 ## Examples
 
-`examples/` contains `terrain`, `ripples` (animated), `city`, `sculpt`, `molecule`, the particle scenes `sparks` and `vortex`, and the pyro scenes `smoke` and `fire` (press Play). The same scenes are available inside the app under **File → Open Example**.
+`examples/` contains `terrain`, `ripples` (animated), `city`, `sculpt`, `molecule`, the keyframed `bounce`, the particle scenes `sparks` and `vortex`, and the pyro scenes `smoke` and `fire` (press Play). The same scenes are available inside the app under **File → Open Example**.
 
 ## Command line (`hdc`)
 

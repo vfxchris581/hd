@@ -87,6 +87,13 @@ public:
     void installAsset(const std::string& path);
     void drawAssetManager();
     bool showAssetManager = false;
+    // keyframe animation (Animation.cpp)
+    void setKeyframe(Node* n, Parm& p);          // key every component at the current frame
+    void keySelected();                          // K: key the animated parameters of the selected nodes
+    void jumpToKey(int direction);               // previous (-1) / next (+1) keyframe
+    void drawKeyMarks(float x0, float x1, float y0, float y1); // ticks on the timeline
+    void drawAnimEditor();
+    bool showAnimEditor = false;
     // shelf, lights and cameras (Shelf.cpp)
     void drawShelf();
     void shelfTool(const std::string& tool);
@@ -201,6 +208,8 @@ private:
     std::vector<std::string> netPath_; // names of the subnets we have dived into
     std::vector<std::string> assets_;
     std::string clipboard_;
+    // animation editor drag
+    struct KeyDrag { bool active = false; std::string node, parm; int comp = 0; float frame = 0; } keyDrag_;
 
     // file dialog
     FileDialogMode fileMode_ = FileDialogMode::None;

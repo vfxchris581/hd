@@ -224,7 +224,7 @@ void App::duplicateSelected() {
             Parm& d = c->parms()[i];
             const Parm& s = n->parms()[i];
             std::copy(s.val, s.val + 3, d.val);
-            for (int k = 0; k < 3; ++k) d.expr[k] = s.expr[k];
+            for (int k = 0; k < 3; ++k) { d.expr[k] = s.expr[k]; d.keys[k] = s.keys[k]; }
             d.str = s.str;
         }
         for (size_t i = 0; i < n->inputs.size(); ++i)
@@ -369,6 +369,9 @@ void App::handleGlobalShortcuts() {
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_C)) copySelected();
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_X)) cutSelected();
         if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_V)) pasteNodes();
+        if (ImGui::IsKeyPressed(ImGuiKey_K, false) && !io.KeyCtrl && !io.KeyAlt) keySelected();
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_RightArrow)) jumpToKey(1);
+        if (ImGui::IsKeyChordPressed(ImGuiMod_Ctrl | ImGuiKey_LeftArrow)) jumpToKey(-1);
     }
     if (!typing) {
         // Houdini-style: up/down arrow steps frames, left/right too
@@ -424,6 +427,7 @@ void App::frame() {
     drawDisplayOptions();
     drawRenderSettings();
     drawAssetManager();
+    drawAnimEditor();
     drawFileDialog();
     drawHelpWindows();
     if (showImGuiDemo) ImGui::ShowDemoWindow(&showImGuiDemo);
@@ -671,6 +675,9 @@ void App::drawHelpWindows() {
                 row("Parameters: right-click label", "Expressions, revert to default");
                 row("Viewport: D", "Display Options (ground plane, markers, background)");
                 row("Ctrl+C / Ctrl+X / Ctrl+V", "Copy / cut / paste nodes");
+                row("Parameters: Alt+click label", "Set a keyframe at the current frame");
+                row("K", "Key the animated parameters of the selected nodes");
+                row("Ctrl+Left / Ctrl+Right", "Previous / next keyframe");
                 row("Render View: Render", "Path-trace the displayed node from the viewport camera");
                 ImGui::EndTable();
             }

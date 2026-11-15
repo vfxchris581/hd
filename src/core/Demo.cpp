@@ -12,6 +12,7 @@ const std::vector<DemoInfo>& demoScenes() {
         {"sparks", "Particle Sparks", "POP Solver: sparks burst from a moving emitter, bounce on the ground and leave trails. Press Play."},
         {"smoke", "Smoke Plume", "Pyro Solver: smoke rises from a sphere and flows around a collider. Press Play."},
         {"fire", "Campfire", "Pyro Solver with fire glow: hot gas cools quickly into dark smoke. Press Play."},
+        {"bounce", "Keyframed Bounce", "Keyframe animation: a ball bounces across the floor, squashing on each hit. Select 'move' to see its keys on the timeline. Press Play."},
         {"vortex", "Particle Vortex", "POP Solver with curl-noise turbulence and a POP wrangle that spins particles into a column. Press Play."},
     };
     return d;
@@ -234,6 +235,47 @@ static bool buildDemoSceneImpl(Graph& g, const std::string& name) {
         g.connect(m, out, 0);
         g.setDisplayNode(out);
         g.frameEnd = 240;
+        return true;
+    }
+    if (name == "bounce") {
+        Node* ball = g.createNode("sphere", 0, 0, "ball");
+        setV(ball, "rad", Vec3(0.5f)); setF(ball, "rows", 16); setF(ball, "cols", 32);
+        Node* col = g.createNode("color", 0, 70, "red");
+        setV(col, "color", Vec3(0.85f, 0.2f, 0.15f));
+        g.connect(ball, col, 0);
+        Node* sq = g.createNode("xform", 0, 140, "squash");
+        g.connect(col, sq, 0);
+        Node* mv = g.createNode("xform", 0, 210, "move");
+        g.connect(sq, mv, 0);
+        // travel: steady left to right
+        mv->parm("t")->setKey(0, 1, -4.5f, 1);
+        mv->parm("t")->setKey(0, 96, 4.5f, 1);
+        // height: each bounce a little lower; squash at every floor contact
+        const float peaks[] = {3.2f, 2.3f, 1.6f, 1.0f};
+        for (int b = 0; b < 4; ++b) {
+            float top = float(1 + b * 24), hit = top + 12;
+            mv->parm("t")->setKey(1, top, peaks[b], 0);
+            mv->parm("t")->setKey(1, hit, 0.36f, 0);
+            for (int c = 0; c < 3; ++c) {
+                float squashed = c == 1 ? 0.72f : 1.18f;
+                sq->parm("s")->setKey(c, hit - 3, 1, 0);
+                sq->parm("s")->setKey(c, hit, squashed, 0);
+                sq->parm("s")->setKey(c, hit + 3, 1, 0);
+            }
+        }
+        mv->parm("t")->setKey(1, 96, 0.5f, 0);
+        Node* ground = g.createNode("grid", 240, 140, "ground");
+        setF(ground, "sizex", 12); setF(ground, "sizey", 5); setF(ground, "rows", 2); setF(ground, "cols", 2);
+        Node* gc = g.createNode("color", 240, 210, "floor_color");
+        setV(gc, "color", Vec3(0.24f, 0.25f, 0.27f));
+        g.connect(ground, gc, 0);
+        Node* m = g.createNode("merge", 120, 290, "merge1");
+        g.connect(mv, m, 0);
+        g.connect(gc, m, 1);
+        Node* out = g.createNode("null", 120, 360, "OUT");
+        g.connect(m, out, 0);
+        g.setDisplayNode(out);
+        g.frameEnd = 96;
         return true;
     }
     if (name == "vortex") {

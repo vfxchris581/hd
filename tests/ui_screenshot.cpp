@@ -115,7 +115,26 @@ int main(int argc, char** argv) {
     app.frameGeometry();
     for (int i = 0; i < 3; ++i) runFrame();
     savePPM(prefix + "_1.ppm", W, H);
-    if (argc > 5 && std::string(argv[5]) == "lights") { // shelf tools: lights and a camera, then render
+    if (argc > 5 && std::string(argv[5]) == "anim") { // keyframes: marks on the timeline, colored fields, editor
+        hd::Node* mv = app.net().findNode("move");
+        app.clearSelection();
+        if (mv) app.select(mv);
+        app.graph.frame = 30;
+        // set a key through the same path as Alt+click, on a parameter that has none yet
+        if (mv) app.setKeyframe(mv, *mv->parm("r"));
+        app.graph.frame = 37;
+        app.showAnimEditor = true;
+        for (int i = 0; i < 4; ++i) runFrame();
+        if (ImGuiWindow* w = ImGui::FindWindowByName("Animation Editor")) { ImGui::SetWindowPos(w, ImVec2(40, 560)); ImGui::SetWindowSize(w, ImVec2(860, 300)); }
+        for (int i = 0; i < 3; ++i) runFrame();
+        std::printf("keys r=%zu ty=%zu\n", mv ? mv->parm("r")->keys[0].size() : 0, mv ? mv->parm("t")->keys[1].size() : 0);
+        app.jumpToKey(1);
+        std::printf("next key from 37 -> %d\n", int(app.graph.frame));
+        app.graph.frame = 37;
+        for (int i = 0; i < 2; ++i) runFrame();
+        savePPM(prefix + "_anim.ppm", W, H);
+        app.showAnimEditor = false;
+    } else if (argc > 5 && std::string(argv[5]) == "lights") { // shelf tools: lights and a camera, then render
         app.shelfTool("spotlight");
         app.shelfTool("pointlight");
         if (hd::Node* pl = app.graph.findNode("pointlight1")) { pl->parm("light_color")->val[0] = 0.3f; pl->parm("light_color")->val[1] = 0.5f; pl->parm("light_color")->val[2] = 1.0f; }

@@ -274,6 +274,12 @@ void App::drawTimeline() {
     ImGui::SameLine();
     if (ImGui::Button(">|")) graph.frame = float(graph.frameEnd);
     ImGui::SameLine();
+    if (ImGui::Button("<K")) jumpToKey(-1);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Previous keyframe (Ctrl+Left)");
+    ImGui::SameLine();
+    if (ImGui::Button("K>")) jumpToKey(1);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("Next keyframe (Ctrl+Right)");
+    ImGui::SameLine();
     int f = int(graph.frame);
     float rightW = 470;
     ImGui::SetNextItemWidth(std::max(120.f, ImGui::GetContentRegionAvail().x - rightW));
@@ -281,6 +287,7 @@ void App::drawTimeline() {
     {
         // blue bar under the slider: frames cached by simulation nodes
         ImVec2 a = ImGui::GetItemRectMin(), b = ImGui::GetItemRectMax();
+        drawKeyMarks(a.x, b.x, a.y, b.y);
         float span = float(std::max(1, graph.frameEnd - graph.frameStart));
         for (auto& n : net().nodes()) {
             if (n->simCacheEnd < n->simCacheStart) continue;

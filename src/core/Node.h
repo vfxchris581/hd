@@ -26,12 +26,29 @@ struct ParmDef {
     int components() const { return type == ParmType::Vec3 ? 3 : 1; }
 };
 
+// A keyframe: the parameter has `value` at `frame`. `interp` shapes the curve from this key to the next.
+struct Key {
+    float frame = 1, value = 0;
+    int interp = 0; // 0 = smooth (ease), 1 = linear, 2 = constant (hold)
+};
+
 struct Parm {
     const ParmDef* def = nullptr;
     float val[3] = {0, 0, 0};
     std::string expr[3];  // per-component expression (empty = constant)
     std::string str;      // String / Code / File value
+    std::vector<Key> keys[3]; // per-component keyframes, sorted by frame (empty = not animated)
     bool isDefault() const;
+
+    bool animated(int c) const { return !keys[c].empty(); }
+    bool anyKeys() const { return !keys[0].empty() || !keys[1].empty() || !keys[2].empty(); }
+    int keyIndexAt(int c, float frame) const; // -1 if there is no key on that frame
+    // Adds a key, or replaces the one already on that frame. interp < 0 keeps / inherits the interpolation.
+    void setKey(int c, float frame, float value, int interp = -1);
+    bool removeKey(int c, float frame);
+    float evalKeys(int c, float frame) const;
+    // Sets a value the way the UI does: on an animated component it keys the current frame.
+    void setValue(int c, float value, float frame) { if (animated(c)) setKey(c, frame, value); else val[c] = value; }
 };
 
 class Node;

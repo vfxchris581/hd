@@ -882,6 +882,82 @@ TEST(lights_and_cameras) {
     CHECK(g2.render.cameraName == cam->name() && collectLights(g2, 1).size() == 2 && collectCameras(g2, 1).size() == 1);
 }
 
+TEST(keyframes) {
+    Graph g;
+    Node* box = g.createNode("box");
+    Node* xf = g.createNode("xform");
+    g.connect(box, xf, 0);
+    Parm* t = xf->parm("t");
+    CHECK(!t->anyKeys() && !xf->isTimeDependent());
+    t->setKey(1, 10, 0);
+    CHECK(t->animated(1) && !t->animated(0));
+    CHECK(!xf->isTimeDependent()); // a single key does not move
+    t->setKey(1, 20, 4);
+    t->setKey(1, 30, 0);
+    CHECK(xf->isTimeDependent() && !t->isDefault());
+    // passes through the keys, holds outside them
+    NEAR(t->evalKeys(1, 10), 0); NEAR(t->evalKeys(1, 20), 4); NEAR(t->evalKeys(1, 30), 0);
+    NEAR(t->evalKeys(1, 1), 0); NEAR(t->evalKeys(1, 99), 0);
+    // smooth: eases (slow near the keys), symmetric, never overshoots
+    float q = t->evalKeys(1, 12.5f), h = t->evalKeys(1, 15);
+    CHECK(q > 0 && q < 1.0f); // less than the 1.0 a straight line gives
+    NEAR(h, 2);
+    bool bounded = true;
+    for (float f = 1; f <= 40; f += 0.25f) { float v = t->evalKeys(1, f); bounded &= v >= -1e-4f && v <= 4.0001f; }
+    CHECK(bounded);
+    // rising run of keys stays monotone
+    Parm* s = xf->parm("scale");
+    s->setKey(0, 1, 0); s->setKey(0, 2, 0.1f); s->setKey(0, 20, 10); s->setKey(0, 21, 10.1f);
+    bool mono = true; float prev = -1;
+    for (float f = 1; f <= 21; f += 0.1f) { float v = s->evalKeys(0, f); mono &= v >= prev - 1e-4f; prev = v; }
+    CHECK(mono);
+    s->keys[0].clear(); s->val[0] = 1;
+    // linear and constant
+    t->keys[1][0].interp = 1;
+    NEAR(t->evalKeys(1, 12.5f), 1);
+    t->keys[1][0].interp = 2;
+    NEAR(t->evalKeys(1, 19.9f), 0);
+    NEAR(t->evalKeys(1, 20), 4);
+    t->keys[1][0].interp = 0;
+    // replacing a key on the same frame, keys stay sorted, new keys inherit the curve type
+    t->setKey(1, 20, 6);
+    CHECK(t->keys[1].size() == 3);
+    NEAR(t->evalKeys(1, 20), 6);
+    t->setKey(1, 5, 1);
+    CHECK(t->keys[1].size() == 4 && t->keys[1][0].frame == 5 && t->keyIndexAt(1, 20) == 2);
+    // setValue keys the frame on an animated component and just sets the value otherwise
+    t->setValue(1, 9, 25);
+    CHECK(t->keyIndexAt(1, 25) >= 0);
+    t->setValue(0, 7, 25);
+    CHECK(!t->animated(0));
+    NEAR(t->val[0], 7);
+    // the node cooks differently per frame
+    xf->touch();
+    Vec3 mn, mx;
+    g.frame = 20; g.cook(xf); xf->geometry().bounds(mn, mx); NEAR(mn.y, 5.5f);
+    g.frame = 30; g.cook(xf); xf->geometry().bounds(mn, mx); NEAR(mn.y, -0.5f);
+    // save / load
+    Graph g2;
+    CHECK(g2.fromJson(Json::parse(g.toJson().dump())));
+    Parm* t2 = g2.findNode("xform1")->parm("t");
+    CHECK(t2->keys[1].size() == t->keys[1].size());
+    for (float f : {5.f, 12.f, 20.f, 27.f}) NEAR(t2->evalKeys(1, f), t->evalKeys(1, f));
+    CHECK(g2.toJson().dump() == g.toJson().dump());
+    // removing keys; the last one leaves its value in the parameter
+    CHECK(t->removeKey(1, 25) && !t->removeKey(1, 26));
+    while (!t->keys[1].empty()) t->removeKey(1, t->keys[1].back().frame);
+    CHECK(!t->animated(1));
+    NEAR(t->val[1], 1);
+    // an expression wins over keys; lights and cameras animate through the same path
+    Node* pl = g.createNode("pointlight");
+    pl->parm("light_intensity")->setKey(0, 1, 0);
+    pl->parm("light_intensity")->setKey(0, 11, 10, 1);
+    pl->parm("light_intensity")->keys[0][0].interp = 1;
+    NEAR(collectLights(g, 6)[0].intensity, 5);
+    pl->parm("light_intensity")->expr[0] = "3";
+    NEAR(collectLights(g, 6)[0].intensity, 3);
+}
+
 TEST(demo_scenes_cook_cleanly) {
     for (auto& d : demoScenes()) {
         Graph g;

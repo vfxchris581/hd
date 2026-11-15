@@ -15,8 +15,69 @@ bool Parm::isDefault() const {
     if (def->type == ParmType::String || def->type == ParmType::Code || def->type == ParmType::File)
         return str == def->defStr;
     for (int c = 0; c < def->components(); ++c)
-        if (val[c] != def->def[c] || !expr[c].empty()) return false;
+        if (val[c] != def->def[c] || !expr[c].empty() || !keys[c].empty()) return false;
     return true;
+}
+
+int Parm::keyIndexAt(int c, float frame) const {
+    for (size_t i = 0; i < keys[c].size(); ++i)
+        if (std::fabs(keys[c][i].frame - frame) < 1e-3f) return int(i);
+    return -1;
+}
+
+void Parm::setKey(int c, float frame, float value, int interp) {
+    auto& k = keys[c];
+    int at = keyIndexAt(c, frame);
+    if (at >= 0) {
+        k[size_t(at)].value = value;
+        if (interp >= 0) k[size_t(at)].interp = interp;
+        return;
+    }
+    Key nk;
+    nk.frame = frame; nk.value = value;
+    size_t pos = 0;
+    while (pos < k.size() && k[pos].frame < frame) ++pos;
+    // a new key continues the curve type around it
+    nk.interp = interp >= 0 ? interp : (pos > 0 ? k[pos - 1].interp : (!k.empty() ? k[0].interp : 0));
+    k.insert(k.begin() + long(pos), nk);
+}
+
+bool Parm::removeKey(int c, float frame) {
+    int at = keyIndexAt(c, frame);
+    if (at < 0) return false;
+    float held = evalKeys(c, frame);
+    keys[c].erase(keys[c].begin() + at);
+    if (keys[c].empty()) val[c] = held; // the last key leaves its value behind
+    return true;
+}
+
+float Parm::evalKeys(int c, float frame) const {
+    const auto& k = keys[c];
+    if (k.empty()) return val[c];
+    if (frame <= k.front().frame) return k.front().value;
+    if (frame >= k.back().frame) return k.back().value;
+    size_t i = 0;
+    while (i + 1 < k.size() && k[i + 1].frame <= frame) ++i;
+    const Key& a = k[i];
+    const Key& b = k[i + 1];
+    float span = b.frame - a.frame;
+    if (span <= 0 || a.interp == 2) return a.value;
+    float t = (frame - a.frame) / span;
+    if (a.interp == 1) return a.value + (b.value - a.value) * t;
+    // smooth: cubic through the keys, flat at peaks and valleys and at the ends, so it eases and never overshoots
+    auto slope = [&](size_t j) {
+        if (j == 0 || j + 1 >= k.size()) return 0.f;
+        float d0 = k[j].value - k[j - 1].value, d1 = k[j + 1].value - k[j].value;
+        if (d0 * d1 <= 0) return 0.f;
+        float s = (k[j + 1].value - k[j - 1].value) / (k[j + 1].frame - k[j - 1].frame);
+        // keep the curve monotone between neighbouring keys
+        float lim0 = 3.f * d0 / (k[j].frame - k[j - 1].frame), lim1 = 3.f * d1 / (k[j + 1].frame - k[j].frame);
+        float lim = std::fabs(lim0) < std::fabs(lim1) ? lim0 : lim1;
+        return std::fabs(s) > std::fabs(lim) ? lim : s;
+    };
+    float m0 = slope(i) * span, m1 = slope(i + 1) * span;
+    float t2 = t * t, t3 = t2 * t;
+    return (2 * t3 - 3 * t2 + 1) * a.value + (t3 - 2 * t2 + t) * m0 + (-2 * t3 + 3 * t2) * b.value + (t3 - t2) * m1;
 }
 
 // ---------------------------------------------------------------- Node
@@ -56,7 +117,7 @@ std::unordered_map<std::string, CachedExpr>& exprCache() {
 
 float Node::evalFloat(const Parm& p, int comp, float frame, float fps) const {
     const std::string& e = p.expr[comp];
-    if (e.empty()) return p.val[comp];
+    if (e.empty()) return p.keys[comp].empty() ? p.val[comp] : p.evalKeys(comp, frame);
     auto& cache = exprCache();
     auto it = cache.find(e);
     if (it == cache.end()) {
@@ -79,6 +140,8 @@ bool Node::isTimeDependent() const {
     if (sub_)
         for (auto& c : sub_->nodes()) if (c->isTimeDependent()) return true;
     for (auto& p : parms_) {
+        for (int c = 0; c < 3; ++c)
+            if (p.expr[c].empty() && p.keys[c].size() > 1) return true;
         for (int c = 0; c < 3; ++c)
             if (!p.expr[c].empty() && (p.expr[c].find("$F") != std::string::npos || p.expr[c].find("$T") != std::string::npos))
                 return true;
@@ -535,6 +598,19 @@ Json Graph::toJson() const {
                 for (int c = 0; c < d.components(); ++c) e.push(p.expr[c]);
                 parms[d.name + ".expr"] = e;
             }
+            if (p.anyKeys()) {
+                Json all = Json::array();
+                for (int c = 0; c < d.components(); ++c) {
+                    Json comp = Json::array();
+                    for (auto& k : p.keys[c]) {
+                        Json jk = Json::array();
+                        jk.push(double(k.frame)); jk.push(double(k.value)); jk.push(k.interp);
+                        comp.push(jk);
+                    }
+                    all.push(comp);
+                }
+                parms[d.name + ".keys"] = all;
+            }
         }
         jn["parms"] = parms;
         Json inputs = Json::array();
@@ -569,6 +645,10 @@ std::vector<Node*> Graph::addNodesFromJson(const Json& nodes, float dx, float dy
             else p.val[0] = float(v.num());
             const Json& e = parms.get(d.name + ".expr");
             for (int c = 0; c < 3 && c < int(e.size()); ++c) p.expr[c] = e[size_t(c)].str();
+            const Json& ks = parms.get(d.name + ".keys");
+            for (int c = 0; c < 3 && c < int(ks.size()); ++c)
+                for (auto& jk : ks[size_t(c)].items())
+                    if (jk.size() == 3) p.setKey(c, float(jk[0].num()), float(jk[1].num()), int(jk[2].num()));
         }
         if (n->sub_ && jn.get("subnet").isObject()) n->sub_->fromJson(jn.get("subnet"));
         byOldName[jn.get("name").str()] = n;

@@ -102,6 +102,7 @@ if(HD_BUILD_APP)
   target_compile_definitions(imgui PUBLIC GLFW_INCLUDE_NONE)
 
   add_library(hd_app STATIC
+    src/app/Animation.cpp
     src/app/App.cpp
     src/app/Assets.cpp
     src/app/NetworkEditor.cpp
